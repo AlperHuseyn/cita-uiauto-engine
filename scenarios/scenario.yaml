@@ -33,11 +33,11 @@ steps:
 
   # ===== REMOVE TASK =====
   - wait:
-      element: removetaskbutton0
+      element: removetaskbutton_0
       state: visible
 
   - click:
-      element: removetaskbutton0
+      element: removetaskbutton_0
 
   # ===== LOGOUT (CTRL + L) =====
   - hotkey:

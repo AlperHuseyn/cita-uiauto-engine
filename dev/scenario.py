@@ -13,7 +13,7 @@ def main() -> int:
 
     # ===== PATH CONFIG =====
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    OBJECT_MAP = os.path.join(ROOT, "object-maps", "qtquicktaskapp.yaml")
+    OBJECT_MAP = os.path.join(ROOT, "object-maps", "elements.yaml")
     APP_PATH = r"C:\\Users\\alper\\source\\repos\\QtQuickTaskApp-oltan\\out\\build\\x64-Debug\\QtQuickTaskApp.exe"
 
     USERNAME = "AutomationTest"
@@ -42,20 +42,20 @@ def main() -> int:
     try:
         # ===== LOGIN =====
         print("Login yapılıyor...")
-        actions.wait_for("username_input", state="visible")
-        actions.type("username_input", USERNAME)
-        actions.click("login_button")
+        actions.wait_for("usernamefield", state="visible")
+        actions.type("usernamefield", USERNAME)
+        actions.click("loginbutton")
 
         # ===== CREATE TASK =====
         print("Task oluşturuluyor...")
-        actions.wait_for("task_input", state="visible")
-        actions.type("task_input", TASK_TEXT)
-        actions.click("add_task_button")
+        actions.wait_for("taskinput", state="visible")
+        actions.type("taskinput", TASK_TEXT)
+        actions.click("addtaskbutton")
 
         # ===== REMOVE TASK =====
         print("Task siliniyor...")
-        actions.wait_for("remove_task_button_0", state="visible")
-        actions.click("remove_task_button_0")
+        actions.wait_for("removetaskbutton_0", state="visible")
+        actions.click("removetaskbutton_0")
 
         # ===== LOGOUT (CTRL + L) =====
         print("Logout (Ctrl+L)...")
