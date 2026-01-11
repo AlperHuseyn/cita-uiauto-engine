@@ -15,6 +15,8 @@ from .inspector import (
     emit_elements_yaml_stateful,
 )
 
+from .recorder import record_session
+
 
 def main(argv=None) -> int:
     argv = argv or sys.argv[1:]
@@ -46,6 +48,17 @@ def main(argv=None) -> int:
     insp.add_argument("--emit-window-name", default="main", help="Window name used in generated elements.yaml (default: main)")
     insp.add_argument("--state", default="default", help="UI state name (default: 'default')")
     insp.add_argument("--merge", action="store_true", help="Merge with existing elements.yaml")
+
+    # -------------------------
+    # record
+    # -------------------------
+    recp = sub.add_parser("record", help="Record user interactions into semantic YAML steps")
+    recp.add_argument("--elements", required=True, help="Path to elements.yaml (will be updated with new elements)")
+    recp.add_argument("--scenario-out", required=True, help="Output path for recorded scenario YAML")
+    recp.add_argument("--window-title-re", default=None, help="Filter recording to window matching title regex")
+    recp.add_argument("--window-name", default="main", help="Window name for element specs (default: main)")
+    recp.add_argument("--state", default="default", help="UI state name for recorded elements (default: 'default')")
+    recp.add_argument("--debug-json-out", default=None, help="Optional: save debug snapshots to this JSON file")
 
     args = p.parse_args(argv)
 
@@ -93,6 +106,17 @@ def main(argv=None) -> int:
             paths["elements_yaml"] = out_yaml
 
         print(json.dumps({"status": "ok", "outputs": paths, "controls": len(result.get("controls", []))}, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "record":
+        recorder = record_session(
+            elements_yaml=args.elements,
+            scenario_out=args.scenario_out,
+            window_title_re=args.window_title_re,
+            window_name=args.window_name,
+            state=args.state,
+            debug_json_out=args.debug_json_out,
+        )
         return 0
 
     return 1
