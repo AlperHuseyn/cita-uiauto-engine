@@ -60,10 +60,20 @@ except ImportError:
 try:
     import comtypes
     import comtypes.client
+    # Pre-import UIA type library if available (comtypes generates it on first use)
+    try:
+        from comtypes.gen import UIAutomationClient as UIA
+        UIA_AVAILABLE = True
+    except ImportError:
+        # Type library not yet generated - will be created on first use
+        UIA_AVAILABLE = False
+        UIA = None
     COMTYPES_AVAILABLE = True
 except ImportError:
     COMTYPES_AVAILABLE = False
+    UIA_AVAILABLE = False
     comtypes = None
+    UIA = None
 
 from pywinauto import Desktop
 
@@ -130,6 +140,7 @@ class Recorder:
         self._typing_buffer: List[str] = []
         self._last_action_time = 0.0
         self._typing_timeout = 2.0  # seconds of inactivity to flush typing
+        self._typing_lock = threading.Lock()  # Protect typing state from race conditions
         
         # Control flags
         self._recording = False
@@ -365,20 +376,27 @@ class Recorder:
             # Generate element key
             elem_key = self._ensure_element(element_info)
             
-            # If typing on a different element, flush previous buffer
-            if self._typing_element_key and self._typing_element_key != elem_key:
-                self._flush_typing()
-            
-            # Append to buffer
-            self._typing_element_key = elem_key
-            self._typing_buffer.append(char)
-            self._last_action_time = time.time()
+            # Thread-safe access to typing state
+            with self._typing_lock:
+                # If typing on a different element, flush previous buffer
+                if self._typing_element_key and self._typing_element_key != elem_key:
+                    self._flush_typing_unsafe()  # Already have lock
+                
+                # Append to buffer
+                self._typing_element_key = elem_key
+                self._typing_buffer.append(char)
+                self._last_action_time = time.time()
             
         except Exception as e:
             print(f"  ⚠️  Failed to capture typing: {e}")
 
     def _flush_typing(self) -> None:
-        """Flush accumulated typing buffer into a single type step."""
+        """Flush accumulated typing buffer into a single type step (thread-safe)."""
+        with self._typing_lock:
+            self._flush_typing_unsafe()
+    
+    def _flush_typing_unsafe(self) -> None:
+        """Flush typing buffer without acquiring lock (must be called with lock held)."""
         if not self._typing_buffer or not self._typing_element_key:
             return
         
@@ -401,9 +419,11 @@ class Recorder:
         while not self._stop_event.is_set():
             time.sleep(0.5)
             
-            if (self._typing_buffer and 
-                time.time() - self._last_action_time > self._typing_timeout):
-                self._flush_typing()
+            # Thread-safe check
+            with self._typing_lock:
+                if (self._typing_buffer and 
+                    time.time() - self._last_action_time > self._typing_timeout):
+                    self._flush_typing_unsafe()  # Already have lock
 
     # =========================================================
     # Element Capture & Management
@@ -429,20 +449,32 @@ class Recorder:
             try:
                 # Try to get focused element via UIA
                 if COMTYPES_AVAILABLE:
-                    from comtypes.gen import UIAutomationClient as UIA
+                    # Import or use cached UIA module
+                    if UIA_AVAILABLE and UIA is not None:
+                        uia_mod = UIA
+                    else:
+                        # Try to import dynamically (will trigger type library generation)
+                        try:
+                            from comtypes.gen import UIAutomationClient as uia_mod
+                        except ImportError:
+                            # Type library generation failed, fall back to window()
+                            uia_mod = None
                     
-                    # Create UIA automation instance
-                    uia = comtypes.client.CreateObject(
-                        UIA.CUIAutomation._reg_clsid_,
-                        interface=UIA.IUIAutomation
-                    )
-                    
-                    # Get focused element
-                    focused_elem = uia.GetFocusedElement()
-                    if focused_elem:
-                        # Wrap in pywinauto wrapper for easier manipulation
-                        from pywinauto.controls.uiawrapper import UIAWrapper
-                        focused = UIAWrapper(focused_elem)
+                    if uia_mod:
+                        # Create UIA automation instance
+                        uia = comtypes.client.CreateObject(
+                            uia_mod.CUIAutomation._reg_clsid_,
+                            interface=uia_mod.IUIAutomation
+                        )
+                        
+                        # Get focused element
+                        focused_elem = uia.GetFocusedElement()
+                        if focused_elem:
+                            # Wrap in pywinauto wrapper for easier manipulation
+                            from pywinauto.controls.uiawrapper import UIAWrapper
+                            focused = UIAWrapper(focused_elem)
+                        else:
+                            focused = desktop.window()
                     else:
                         focused = desktop.window()
                 else:
