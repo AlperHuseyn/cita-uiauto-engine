@@ -1,0 +1,70 @@
+app:
+  backend: uia
+  default_timeout: 4
+  polling_interval: 0.2
+  ignore_titlebar_buttons: true
+
+windows:
+  main:
+    locators:
+      - title_re: ".*QtQuickTaskApp.*"
+
+elements:
+  # ===== LOGIN PAGE =====
+
+  username_input:
+    window: main
+    locators:
+      - auto_id: usernameField
+        control_type: Edit
+      - control_type: Edit
+        found_index: 0
+
+  login_button:
+    window: main
+    locators:
+      - auto_id: loginButton
+        control_type: Button
+      - control_type: Button
+        title_re: "(?i)login"
+
+  # ===== MAIN PAGE =====
+
+  task_input:
+    window: main
+    locators:
+      - auto_id: taskInput
+        control_type: Edit
+      - control_type: Edit
+        found_index: 0
+
+  add_task_button:
+    window: main
+    locators:
+      - auto_id: addTaskButton
+        control_type: Button
+      - control_type: Button
+        title_re: "(?i)add|\\+"
+
+  # İlk task satırı (basit E2E için yeterli)
+  remove_task_button_0:
+    window: main
+    locators:
+      - auto_id: removeTaskButton_0
+        control_type: Button
+      - control_type: Button
+        title_re: "(?i)remove|delete|x"
+
+  # ===== MENU =====
+
+  file_menu:
+    window: main
+    locators:
+      - control_type: MenuItem
+        title: File
+
+  logout_menu_item:
+    window: main
+    locators:
+      - control_type: MenuItem
+        title_re: "(?i)logout"

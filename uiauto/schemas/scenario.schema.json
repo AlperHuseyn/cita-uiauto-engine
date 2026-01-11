@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "vars": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "minProperties": 1,
+        "maxProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+          "open_app": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "wait_for_idle": {
+                "type": "boolean"
+              }
+            }
+          },
+          "connect": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "click": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": {
+                "type": "string"
+              },
+              "overrides": {
+                "type": "object"
+              }
+            }
+          },
+          "hotkey": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["keys"],
+            "properties": {
+              "keys": {
+                "type": "string"
+              }
+            }
+          },
+          "type": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "text"],
+            "properties": {
+              "element": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "clear": {
+                "type": "boolean"
+              },
+              "overrides": {
+                "type": "object"
+              }
+            }
+          },
+          "wait": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["exists", "visible", "enabled"]
+              },
+              "timeout": {
+                "type": "number"
+              },
+              "overrides": {
+                "type": "object"
+              }
+            }
+          },
+          "assert": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["exists", "visible", "enabled"]
+              },
+              "overrides": {
+                "type": "object"
+              }
+            }
+          },
+          "close_window": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["window"],
+            "properties": {
+              "window": {
+                "type": "string"
+              }
+            }
+          },
+          "kill_app": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        }
+      }
+    }
+  },
+  "required": ["steps"]
+}
