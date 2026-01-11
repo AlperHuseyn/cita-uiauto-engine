@@ -151,12 +151,15 @@ class Recorder:
         self._shift_pressed = False
         self._win_pressed = False
         
+        # Stop hotkey state (Ctrl+Shift+F12)
+        self._stop_hotkey_pressed = False
+        
         self._desktop = Desktop(backend=self.backend)
 
     def start(self) -> None:
         """Start recording user interactions."""
         print("🎬 Recording started. Interact with the application.")
-        print("   Press Ctrl+C in the console to stop recording.")
+        print("   Press Ctrl+Shift+F12 to stop recording (or Ctrl+C in console).")
         self._recording = True
         self._stop_event.clear()
         
@@ -291,9 +294,19 @@ class Recorder:
         self._flush_typing()
         
         try:
-            # Capture focused element
-            element_info = self._capture_focused_element()
+            # Small delay to let focus settle after click
+            time.sleep(0.05)
+            
+            # Capture focused element with retry logic
+            element_info = None
+            for attempt in range(3):
+                element_info = self._capture_focused_element()
+                if element_info:
+                    break
+                time.sleep(0.05)  # Wait a bit before retry
+            
             if not element_info:
+                print(f"  ⚠️  Click: Could not identify element")
                 return
             
             # Generate element key and ensure it's in elements cache
@@ -323,6 +336,18 @@ class Recorder:
                 self._shift_pressed = True
             elif key == keyboard.Key.cmd or key == keyboard.Key.cmd_r:
                 self._win_pressed = True
+            
+            # Check for stop hotkey: Ctrl+Shift+F12
+            if self._ctrl_pressed and self._shift_pressed:
+                try:
+                    if hasattr(key, 'name') and key.name == 'f12':
+                        self._stop_hotkey_pressed = True
+                        print("\n  🛑 Stop hotkey detected (Ctrl+Shift+F12)")
+                        # Stop recording in a separate thread to avoid blocking
+                        threading.Thread(target=self.stop, daemon=True).start()
+                        return
+                except Exception:
+                    pass
             
             # Check for hotkey (modifier + regular key)
             if self._ctrl_pressed or self._alt_pressed or self._win_pressed:
@@ -692,10 +717,14 @@ def record_session(
     try:
         recorder.start()
         
-        # Wait for user interrupt
-        print("\n  Press Ctrl+C to stop recording...\n")
-        while True:
-            time.sleep(1)
+        # Wait for user interrupt or stop hotkey
+        print("\n  Press Ctrl+Shift+F12 to stop recording (or Ctrl+C in console)...\n")
+        while recorder._recording:
+            time.sleep(0.5)
+        
+        # If stopped via hotkey, wait a moment for cleanup
+        if recorder._stop_hotkey_pressed:
+            time.sleep(0.5)
     
     except KeyboardInterrupt:
         print("\n")

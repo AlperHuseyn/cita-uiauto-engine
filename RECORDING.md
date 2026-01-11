@@ -60,7 +60,9 @@ uiauto record \
    - Type into text fields → Generates `type` steps (grouped automatically)
    - Press hotkeys (Ctrl+L, etc.) → Generates `hotkey` steps
 
-3. **Stop recording**: Press `Ctrl+C` in the terminal
+3. **Stop recording**: 
+   - Press `Ctrl+Shift+F12` (works without terminal focus)
+   - Or press `Ctrl+C` in the terminal (requires terminal to be focused)
 
 4. **Review outputs**:
    - `scenarios/recorded.yaml` - Generated scenario with semantic steps
@@ -139,9 +141,10 @@ Elements with the same base name but different states will be automatically suff
 
 1. **Window Filtering**: Always use `--window-title-re` to avoid capturing interactions with other apps
 2. **Slow Down**: Perform actions deliberately with small pauses between steps
-3. **Review Output**: Always review and edit the recorded scenario before using it
-4. **Add Waits**: Insert `wait` steps manually for elements that load asynchronously
-5. **Test Playback**: Run the recorded scenario to verify it works correctly
+3. **Stop Recording**: Use `Ctrl+Shift+F12` to stop without switching to terminal, or `Ctrl+C` in the terminal
+4. **Review Output**: Always review and edit the recorded scenario before using it
+5. **Add Waits**: Insert `wait` steps manually for elements that load asynchronously
+6. **Test Playback**: Run the recorded scenario to verify it works correctly
 
 ## Debugging
 
@@ -162,16 +165,16 @@ This creates a JSON file with all captured element information for troubleshooti
 $ uiauto record --elements object-maps/elements.yaml --scenario-out scenarios/test.yaml --window-title-re "MyApp"
 
 🎬 Recording started. Interact with the application.
-   Press Ctrl+C in the console to stop recording.
+   Press Ctrl+Shift+F12 to stop recording (or Ctrl+C in console).
 
-  Press Ctrl+C to stop recording...
+  Press Ctrl+Shift+F12 to stop recording (or Ctrl+C in console)...
 
   🖱️  Click: loginbutton
   ⌨️  Type: usernamefield = 'TestUser'
   🖱️  Click: submitbutton
   ⌨️  Hotkey: ^l
 
-^C
+  🛑 Stop hotkey detected (Ctrl+Shift+F12)
 ⏹️  Stopping recording...
 ✅ Recording stopped. Captured 4 steps.
 📝 Scenario saved to: scenarios/test.yaml
