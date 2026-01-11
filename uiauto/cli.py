@@ -15,7 +15,13 @@ from .inspector import (
     emit_elements_yaml_stateful,
 )
 
-from .recorder import record_session
+# Import recorder conditionally to avoid hard dependency on optional packages
+try:
+    from .recorder import record_session
+    RECORDER_AVAILABLE = True
+except ImportError:
+    RECORDER_AVAILABLE = False
+    record_session = None
 
 
 def main(argv=None) -> int:
@@ -109,6 +115,11 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "record":
+        if not RECORDER_AVAILABLE:
+            print("ERROR: Recording requires additional dependencies.", file=sys.stderr)
+            print("Install with: pip install pynput comtypes", file=sys.stderr)
+            return 1
+        
         recorder = record_session(
             elements_yaml=args.elements,
             scenario_out=args.scenario_out,

@@ -40,11 +40,9 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
 import threading
 import time
-from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -81,7 +79,6 @@ from .inspector import (
     extract_control_info,
     _normalize_key,
     _make_locator_candidates,
-    emit_elements_yaml_stateful,
 )
 
 
@@ -230,8 +227,10 @@ class Recorder:
         
         windows_block = existing.get("windows", {})
         if self.window_name not in windows_block:
+            # Use window_title_re if provided, otherwise require user to set it manually
+            title_re = self.window_title_re if self.window_title_re else ".*"
             windows_block[self.window_name] = {
-                "locators": [{"title_re": self.window_title_re or ".*"}]
+                "locators": [{"title_re": title_re}]
             }
         
         elements_block = existing.get("elements", {})
@@ -535,6 +534,10 @@ class Recorder:
             
         except Exception as e:
             # Failed to capture - this is expected for some transient UI states
+            # Could be due to element no longer existing, window closed, etc.
+            # Log for debugging but return None for graceful degradation
+            if self.debug_json_out:
+                print(f"  Debug: Failed to capture focused element: {type(e).__name__}: {e}")
             return None
 
     def _ensure_element(self, element_info: Dict[str, Any]) -> str:
