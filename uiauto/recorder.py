@@ -82,6 +82,26 @@ from .inspector import (
 )
 
 
+# Constants
+MODIFIER_KEY_NAMES = frozenset([
+    "ctrl", "ctrl_l", "ctrl_r",
+    "alt", "alt_l", "alt_r",
+    "shift", "shift_r",
+    "cmd", "cmd_r"
+])
+
+# Windows POINT structure for ElementFromPoint
+try:
+    import ctypes
+    class POINT(ctypes.Structure):
+        """Windows POINT structure for screen coordinates."""
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+    POINT_AVAILABLE = True
+except ImportError:
+    POINT = None
+    POINT_AVAILABLE = False
+
+
 class Recorder:
     """
     Records user interactions and emits semantic scenario YAML + updated elements.yaml.
@@ -346,7 +366,7 @@ class Recorder:
                         print("\n  🛑 Stop hotkey detected (Ctrl+Shift+F12)")
                         # Stop recording in a separate thread to avoid blocking
                         threading.Thread(target=self.stop, daemon=True).start()
-                        # CRITICAL: Return immediately to suppress this hotkey from being recorded
+                        # Prevent stop hotkey from being emitted as a regular hotkey step
                         return
                 except Exception:
                     pass
@@ -595,7 +615,7 @@ class Recorder:
                     except ImportError:
                         uia_mod = None
                 
-                if uia_mod:
+                if uia_mod and POINT_AVAILABLE:
                     try:
                         # Create UIA automation instance
                         uia = comtypes.client.CreateObject(
@@ -603,11 +623,7 @@ class Recorder:
                             interface=uia_mod.IUIAutomation
                         )
                         
-                        # Create POINT structure
-                        import ctypes
-                        class POINT(ctypes.Structure):
-                            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-                        
+                        # Create point for coordinates
                         point = POINT(x, y)
                         
                         # Get element at point
@@ -721,9 +737,7 @@ class Recorder:
         """Check if a key is a modifier key (Ctrl, Alt, Shift, Win)."""
         try:
             if hasattr(key, 'name'):
-                key_name = key.name.lower()
-                return key_name in ("ctrl", "ctrl_l", "ctrl_r", "alt", "alt_l", "alt_r", 
-                                   "shift", "shift_r", "cmd", "cmd_r")
+                return key.name.lower() in MODIFIER_KEY_NAMES
             return False
         except Exception:
             return False
@@ -767,8 +781,7 @@ class Recorder:
                 return None
             
             # Don't emit hotkeys for just modifiers
-            if key_str in ("ctrl", "ctrl_l", "ctrl_r", "alt", "alt_l", "alt_r", 
-                          "shift", "shift_r", "cmd", "cmd_r"):
+            if key_str.lower() in MODIFIER_KEY_NAMES:
                 return None
             
             # Build modifier prefix
