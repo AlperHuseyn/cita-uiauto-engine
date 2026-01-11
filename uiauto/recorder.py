@@ -4,27 +4,34 @@ Recording module for capturing user interactions into semantic YAML steps.
 
 Strategy:
 ---------
-Since Windows UIA doesn't provide native event recording APIs, we use a polling-based
-approach with pynput for input capture:
+Since Windows UIA doesn't provide native event recording APIs, we use a hybrid approach:
 
-1. Listen to mouse clicks and keyboard events via pynput
-2. When an action occurs (click/type/hotkey), capture the currently focused UIA element
+1. Use pynput to detect when mouse clicks and keyboard events occur (global hooks)
+2. Poll the UIA focused element when an event is detected
 3. Use inspector logic to extract element info and generate locator candidates
 4. Translate interactions into semantic steps (click/type/hotkey)
 5. Maintain elements.yaml incrementally with safe merging
 
+The approach uses pynput for timing/event detection, then queries UIA for the actual element.
+This works because:
+- Click events: We can capture the focused element immediately after a click
+- Type events: We track the focused element when typing occurs
+- Hotkey events: Detected by modifier + key combinations
+
 Tradeoffs:
 ----------
 - Polling-based: Small lag between action and capture (acceptable for recording)
-- Best-effort element identification: May miss transient elements
+- Best-effort element identification: May miss very transient elements
 - QtQuick-friendly: Prefers name/name_re locators (Accessible.name)
 - No raw coordinates: All actions mapped to semantic elements
 - Keystroke grouping: Consecutive typing on same element merged into single step
+- Focus-based: Only captures elements that receive focus (suitable for interactive recording)
 
 Dependencies:
 -------------
-- pynput: For cross-platform input event capture
+- pynput: For input event detection
 - pywinauto: For UIA element inspection
+- comtypes (via pywinauto): For UIA automation element access
 - inspector: For element info extraction and locator generation
 """
 
@@ -41,11 +48,22 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
+# Optional imports for recording - fail gracefully if not available
 try:
     from pynput import keyboard, mouse
+    PYNPUT_AVAILABLE = True
 except ImportError:
-    print("ERROR: pynput not installed. Install with: pip install pynput", file=sys.stderr)
-    sys.exit(1)
+    PYNPUT_AVAILABLE = False
+    keyboard = None
+    mouse = None
+
+try:
+    import comtypes
+    import comtypes.client
+    COMTYPES_AVAILABLE = True
+except ImportError:
+    COMTYPES_AVAILABLE = False
+    comtypes = None
 
 from pywinauto import Desktop
 
@@ -83,6 +101,18 @@ class Recorder:
         debug_json_out: Optional[str] = None,
         backend: str = "uia",
     ):
+        if not PYNPUT_AVAILABLE:
+            raise ImportError(
+                "pynput is required for recording but not installed.\n"
+                "Install with: pip install pynput"
+            )
+        
+        if not COMTYPES_AVAILABLE:
+            raise ImportError(
+                "comtypes is required for recording but not installed.\n"
+                "Install with: pip install comtypes"
+            )
+        
         self.elements_yaml_path = os.path.abspath(elements_yaml_path)
         self.scenario_out_path = scenario_out_path
         self.window_title_re = window_title_re
@@ -384,15 +414,75 @@ class Recorder:
         Capture the currently focused UIA element.
         
         Returns element info dict or None if capture failed.
+        
+        Uses UIA's GetFocusedElement to get the actual focused control,
+        which is more reliable than trying to guess from mouse position.
         """
         try:
-            # Try to get focused element from desktop
-            focused = self._desktop.window()
+            # Use pywinauto's Desktop to get focused element
+            # This internally uses UIA's GetFocusedElement()
+            desktop = Desktop(backend=self.backend)
+            
+            # Get the focused element - pywinauto returns the wrapper
+            # We need to be careful here as GetFocusedElement may return
+            # the root window, not the specific control
+            try:
+                # Try to get focused element via UIA
+                if COMTYPES_AVAILABLE:
+                    from comtypes.gen import UIAutomationClient as UIA
+                    
+                    # Create UIA automation instance
+                    uia = comtypes.client.CreateObject(
+                        UIA.CUIAutomation._reg_clsid_,
+                        interface=UIA.IUIAutomation
+                    )
+                    
+                    # Get focused element
+                    focused_elem = uia.GetFocusedElement()
+                    if focused_elem:
+                        # Wrap in pywinauto wrapper for easier manipulation
+                        from pywinauto.controls.uiawrapper import UIAWrapper
+                        focused = UIAWrapper(focused_elem)
+                    else:
+                        focused = desktop.window()
+                else:
+                    focused = desktop.window()
+                
+            except Exception:
+                # Fallback: try to get focused window from desktop
+                focused = desktop.window()
+                
+                # If we can get descendants, try to find focused child
+                try:
+                    desc = focused.descendants()
+                    for d in desc:
+                        try:
+                            # Check if element has focus via HasKeyboardFocus
+                            if hasattr(d.element_info, 'has_keyboard_focus'):
+                                if d.element_info.has_keyboard_focus:
+                                    focused = d
+                                    break
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
             
             # Filter by window title if specified
             if self.window_title_re:
                 try:
-                    window_title = focused.window_text()
+                    # Get the top-level window
+                    parent = focused
+                    while True:
+                        try:
+                            p = parent.parent()
+                            if p and p.handle != parent.handle:
+                                parent = p
+                            else:
+                                break
+                        except Exception:
+                            break
+                    
+                    window_title = parent.window_text()
                     if not re.search(self.window_title_re, window_title or ""):
                         # Not in target window, ignore
                         return None
