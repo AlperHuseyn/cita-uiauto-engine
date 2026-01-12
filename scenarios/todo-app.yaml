@@ -1,0 +1,26 @@
+steps:
+  # ===== START APP =====
+  - open_app:
+      path: "C:\\Users\\alper\\source\\repos\\QtQuickTaskApp-oltan\\out\\build\\x64-Debug\\QtQuickTaskApp.exe"
+  - click:
+      element: usernamefield
+  - type:
+      element: usernamefield
+      text: AlperHuseyin
+  - click:
+      element: loginbutton
+  - click:
+      element: taskinput
+  - type:
+      element: taskinput
+      text: AHD
+  - click:
+      element: addtaskbutton
+  - click:
+      element: taskcheckbox_0
+  - click:
+      element: clearcompletedbutton
+  - hotkey:
+      keys: "^\f"
+  - hotkey:
+      keys: "^\x11"
