@@ -196,10 +196,11 @@ MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 WM_HOTKEY = 0x0312
 VK_F12 = 0x7B
+VK_Q = 0x51
 
 # Recorder constants
-STOP_HOTKEY_MODIFIERS = MOD_CONTROL | MOD_SHIFT  # Ctrl+Shift
-STOP_HOTKEY_VK = VK_F12  # F12 key
+STOP_HOTKEY_MODIFIERS = MOD_CONTROL | MOD_ALT  # Ctrl+Alt
+STOP_HOTKEY_VK = VK_Q  # Q key
 MAX_PARENT_WALK_DEPTH = 5  # Maximum levels to walk up parent chain when refining elements
 
 
@@ -294,12 +295,12 @@ class Recorder:
                     print(f"  Debug: Failed to enable DPI awareness: {e}")
         
         print("🎬 Recording started. Interact with the application.")
-        print("   Press Ctrl+Shift+F12 to stop recording (or Ctrl+C in console).")
+        print("   Press Ctrl+Alt+Q to stop recording (or Ctrl+C in console).")
         self._recording = True
         self._stopping = False
         self._stop_event.clear()
         
-        # Register native Windows hotkey (Ctrl+Shift+F12)
+        # Register native Windows hotkey (Ctrl+Alt+Q)
         if WINDOWS_API_AVAILABLE and RegisterHotKey:
             self._hotkey_thread = threading.Thread(target=self._hotkey_listener_thread, daemon=True)
             self._hotkey_thread.start()
@@ -446,7 +447,7 @@ class Recorder:
 
     def _hotkey_listener_thread(self) -> None:
         """
-        Dedicated thread for listening to native Windows hotkey (Ctrl+Shift+F12).
+        Dedicated thread for listening to native Windows hotkey (Ctrl+Alt+Q).
         
         Uses RegisterHotKey with a message-only window and PeekMessage to reliably
         capture the stop hotkey without blocking, preventing starvation of the hotkey event.
@@ -481,7 +482,7 @@ class Recorder:
                         print(f"  Debug: Failed to create message window: {e}, using NULL")
                     hwnd = None
             
-            # Register Ctrl+Shift+F12 as a global hotkey
+            # Register Ctrl+Alt+Q as a global hotkey
             # Use hwnd if available, otherwise NULL (less reliable on some systems)
             success = RegisterHotKey(hwnd, self._stop_hotkey_id, STOP_HOTKEY_MODIFIERS, STOP_HOTKEY_VK)
             
@@ -491,7 +492,7 @@ class Recorder:
                 return
             
             if self.debug_json_out:
-                print("  Debug: Native stop hotkey registered (Ctrl+Shift+F12)")
+                print("  Debug: Native stop hotkey registered (Ctrl+Alt+Q)")
             
             # Non-blocking message loop using PeekMessage
             msg = wintypes.MSG()
@@ -502,7 +503,7 @@ class Recorder:
                     if msg.message == WM_HOTKEY and msg.wParam == self._stop_hotkey_id:
                         # Stop hotkey pressed!
                         self._stop_hotkey_pressed = True
-                        print("\n  🛑 Stop hotkey detected (Ctrl+Shift+F12)")
+                        print("\n  🛑 Stop hotkey detected (Ctrl+Alt+Q)")
                         
                         # Immediately set flags to suppress all further recording
                         self._stop_requested = True
@@ -549,6 +550,11 @@ class Recorder:
 
     def _on_mouse_click(self, x: int, y: int, button: mouse.Button, pressed: bool) -> None:
         """Handle mouse click events."""
+        # HIGHEST PRIORITY: Check stop_requested flag first
+        # If stop was requested (by native hotkey or Ctrl+C), suppress ALL click processing
+        if self._stop_requested:
+            return
+        
         # Safety guard: don't record if stopping
         if not self._recording or not pressed or self._stopping:
             return
@@ -608,19 +614,20 @@ class Recorder:
             
             # SUPPRESS stop hotkey detection via pynput
             # Stop hotkey is ONLY handled by native Windows API
-            # If Ctrl+Shift is pressed, check if it's F12 and suppress it
-            if self._ctrl_pressed and self._shift_pressed:
+            # If Ctrl+Alt is pressed, check if it's Q and suppress it
+            if self._ctrl_pressed and self._alt_pressed:
                 try:
-                    # Check if this is F12 (or END on some keyboards)
+                    # Check if this is Q key
+                    key_char = getattr(key, 'char', '').lower() if hasattr(key, 'char') else ''
                     key_name = getattr(key, 'name', '').lower() if hasattr(key, 'name') else ''
-                    if key_name in ('f12', 'end'):
+                    if key_char == 'q' or key_name == 'q':
                         # This is the stop hotkey - suppress it completely
                         # Native hotkey thread will handle it
                         return
                 except Exception:
                     pass
             
-            # Note: Stop hotkey (Ctrl+Shift+F12) is handled by native Windows API
+            # Note: Stop hotkey (Ctrl+Alt+Q) is handled by native Windows API
             # in _hotkey_listener_thread, NOT here. This prevents keyboard layout
             # issues and ensures reliable stop detection.
             
@@ -1198,7 +1205,7 @@ def record_session(
         recorder.start()
         
         # Wait for user interrupt or stop hotkey
-        print("\n  Press Ctrl+Shift+F12 to stop recording (or Ctrl+C in console)...\n")
+        print("\n  Press Ctrl+Alt+Q to stop recording (or Ctrl+C in console)...\n")
         while recorder._recording:
             time.sleep(0.5)
         
