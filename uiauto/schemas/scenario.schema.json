@@ -21,12 +21,8 @@
             "additionalProperties": false,
             "required": ["path"],
             "properties": {
-              "path": {
-                "type": "string"
-              },
-              "wait_for_idle": {
-                "type": "boolean"
-              }
+              "path": { "type": "string" },
+              "wait_for_idle": { "type": "boolean" }
             }
           },
           "connect": {
@@ -38,12 +34,35 @@
             "additionalProperties": false,
             "required": ["element"],
             "properties": {
-              "element": {
-                "type": "string"
-              },
-              "overrides": {
-                "type": "object"
-              }
+              "element": { "type": "string" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "double_click": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": { "type": "string" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "right_click": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": { "type": "string" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "hover": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": { "type": "string" },
+              "overrides": { "type": "object" }
             }
           },
           "hotkey": {
@@ -51,9 +70,7 @@
             "additionalProperties": false,
             "required": ["keys"],
             "properties": {
-              "keys": {
-                "type": "string"
-              }
+              "keys": { "type": "string" }
             }
           },
           "type": {
@@ -61,18 +78,10 @@
             "additionalProperties": false,
             "required": ["element", "text"],
             "properties": {
-              "element": {
-                "type": "string"
-              },
-              "text": {
-                "type": "string"
-              },
-              "clear": {
-                "type": "boolean"
-              },
-              "overrides": {
-                "type": "object"
-              }
+              "element": { "type": "string" },
+              "text": { "type": "string" },
+              "clear": { "type": "boolean" },
+              "overrides": { "type": "object" }
             }
           },
           "wait": {
@@ -80,19 +89,13 @@
             "additionalProperties": false,
             "required": ["element"],
             "properties": {
-              "element": {
-                "type": "string"
-              },
+              "element": { "type": "string" },
               "state": {
                 "type": "string",
                 "enum": ["exists", "visible", "enabled"]
               },
-              "timeout": {
-                "type": "number"
-              },
-              "overrides": {
-                "type": "object"
-              }
+              "timeout": { "type": "number" },
+              "overrides": { "type": "object" }
             }
           },
           "assert": {
@@ -100,16 +103,84 @@
             "additionalProperties": false,
             "required": ["element"],
             "properties": {
-              "element": {
-                "type": "string"
-              },
+              "element": { "type": "string" },
               "state": {
                 "type": "string",
                 "enum": ["exists", "visible", "enabled"]
               },
-              "overrides": {
-                "type": "object"
-              }
+              "overrides": { "type": "object" }
+            }
+          },
+          "assert_text_equals": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "expected"],
+            "properties": {
+              "element": { "type": "string" },
+              "expected": { "type": "string" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "assert_text_contains": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "substring"],
+            "properties": {
+              "element": { "type": "string" },
+              "substring": { "type": "string" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "set_checkbox": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "checked"],
+            "properties": {
+              "element": { "type": "string" },
+              "checked": { "type": "boolean" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "assert_checkbox_state": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "checked"],
+            "properties": {
+              "element": { "type": "string" },
+              "checked": { "type": "boolean" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "select_combobox": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "option"],
+            "properties": {
+              "element": { "type": "string" },
+              "option": { "type": "string" },
+              "by_index": { "type": "boolean" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "select_list_item": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": { "type": "string" },
+              "item_text": { "type": "string" },
+              "item_index": { "type": "integer" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "assert_count": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "expected"],
+            "properties": {
+              "element": { "type": "string" },
+              "expected": { "type": "integer" },
+              "overrides": { "type": "object" }
             }
           },
           "close_window": {
@@ -117,9 +188,7 @@
             "additionalProperties": false,
             "required": ["window"],
             "properties": {
-              "window": {
-                "type": "string"
-              }
+              "window": { "type": "string" }
             }
           },
           "kill_app": {

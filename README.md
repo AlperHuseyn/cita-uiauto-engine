@@ -11,4 +11,6 @@ CLI: `uiauto run ...`, `uiauto inspect ...`, `uiauto record ...`
 - **Inspect**: Analyze UI elements and generate object maps
 - **Record**: Capture user interactions and generate semantic YAML scenarios
 
+See [RUNNING.md](RUNNING.md) for details on running feature.  
+See [INSPECTING.md](INSPECTING.md) for details on the inspect feature.  
 See [RECORDING.md](RECORDING.md) for details on the recording feature.

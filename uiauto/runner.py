@@ -156,6 +156,14 @@ class Runner:
                     json.dump(report, f, indent=2)
 
     def _execute(self, keyword: str, args: Dict[str, Any], sess: Session, actions: Actions) -> None:
+        """
+        @brief Execute single scenario step.
+        @param keyword Step keyword
+        @param args Step arguments
+        @param sess Session instance
+        @param actions Actions instance
+        @throws ValueError if keyword unknown
+        """
         if keyword == "open_app":
             path = args["path"]
             sess.start(path, wait_for_idle=bool(args.get("wait_for_idle", False)))
@@ -169,23 +177,63 @@ class Runner:
             actions.click(args["element"], overrides=args.get("overrides"))
             return
 
+        if keyword == "double_click":
+            actions.double_click(args["element"], overrides=args.get("overrides"))
+            return
+
+        if keyword == "right_click": 
+            actions.right_click(args["element"], overrides=args.get("overrides"))
+            return
+
+        if keyword == "hover":
+            actions.hover(args["element"], overrides=args. get("overrides"))
+            return
+
         if keyword == "hotkey":
             actions.hotkey(args["keys"])
             return
 
-        if keyword == "type":
+        if keyword == "type": 
             actions.type(args["element"], text=args["text"], overrides=args.get("overrides"), clear=bool(args.get("clear", True)))
             return
 
-        if keyword == "wait":
-            actions.wait_for(args["element"], state=args.get("state", "visible"), timeout=args.get("timeout"), overrides=args.get("overrides"))
+        if keyword == "wait": 
+            actions.wait_for(args["element"], state=args. get("state", "visible"), timeout=args.get("timeout"), overrides=args.get("overrides"))
             return
 
-        if keyword == "assert":
-            actions.assert_state(args["element"], state=args.get("state", "visible"), overrides=args.get("overrides"))
+        if keyword == "assert": 
+            actions.assert_state(args["element"], state=args. get("state", "visible"), overrides=args.get("overrides"))
             return
 
-        if keyword == "close_window":
+        if keyword == "assert_text_equals": 
+            actions.assert_text_equals(args["element"], expected=args["expected"], overrides=args.get("overrides"))
+            return
+
+        if keyword == "assert_text_contains":
+            actions.assert_text_contains(args["element"], substring=args["substring"], overrides=args.get("overrides"))
+            return
+
+        if keyword == "set_checkbox":
+            actions.set_checkbox(args["element"], checked=args["checked"], overrides=args. get("overrides"))
+            return
+
+        if keyword == "assert_checkbox_state":
+            actions. assert_checkbox_state(args["element"], checked=args["checked"], overrides=args.get("overrides"))
+            return
+
+        if keyword == "select_combobox":
+            actions.select_combobox(args["element"], option=args["option"], by_index=bool(args.get("by_index", False)), overrides=args.get("overrides"))
+            return
+
+        if keyword == "select_list_item":
+            actions.select_list_item(args["element"], item_text=args. get("item_text"), item_index=args.get("item_index"), overrides=args.get("overrides"))
+            return
+
+        if keyword == "assert_count":
+            actions.assert_count(args["element"], expected=args["expected"], overrides=args. get("overrides"))
+            return
+
+        if keyword == "close_window": 
             actions.close_window(args["window"])
             return
 

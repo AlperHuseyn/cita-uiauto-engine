@@ -1,45 +1,44 @@
 # Recording User Interactions
 
-The `uiauto record` command allows you to record user interactions with a Windows application and automatically generate semantic YAML scenarios compatible with the existing `uiauto run` framework.
+The `uiauto record` command captures user interactions with a Windows application and generates semantic YAML scenarios compatible with `uiauto run`.
 
 ## Features
 
-- **Semantic Recording**: Captures clicks, typing, and hotkeys as high-level semantic steps
-- **No Coordinates**: All actions are mapped to elements using UIA locators (no raw mouse coordinates)
+- **Semantic Recording**: Converts clicks, typing, and hotkeys into high-level steps
+- **No Coordinates**: Maps actions to elements using UIA locators
 - **QtQuick Compatible**: Prefers `name`/`name_re` locators based on `Accessible.name`
-- **Keystroke Grouping**: Consecutive typing on the same element is merged into a single `type` step
-- **Incremental Elements.yaml**: Automatically updates your object map with newly discovered elements
-- **Safe Merging**: Respects existing element definitions and state-based variants
+- **Keystroke Grouping**: Consecutive typing merged into single `type` steps
+- **Incremental Updates**: Automatically updates `elements.yaml` with new elements
+- **Safe Merging**: Preserves existing element definitions
 
 ## Installation
 
-The recorder requires two additional dependencies:
+Recorder requires optional dependencies:
 
 ```bash
 pip install pynput comtypes
 ```
 
-## Usage
-
-### Basic Recording
+## Basic Usage
 
 ```bash
-uiauto record \
-  --elements object-maps/elements.yaml \
-  --scenario-out scenarios/recorded.yaml \
+python -m uiauto.cli record `
+  --elements object-maps/elements.yaml `
+  --scenario-out scenarios/recorded.yaml `
   --window-title-re "MyApp.*"
 ```
 
 This will:
-1. Start recording interactions with any window matching "MyApp.*"
-2. Capture all clicks, typing, and hotkeys
-3. On Ctrl+C, save the recorded scenario to `scenarios/recorded.yaml`
-4. Update `object-maps/elements.yaml` with any new elements
 
-### Full Options
+1. Start recording interactions with windows matching "MyApp.\*"
+2. Capture clicks and typing
+3. Save scenario to `scenarios/recorded.yaml` on stop
+4. Update `object-maps/elements.yaml` with new elements
+
+## Full Options
 
 ```bash
-uiauto record \
+python -m uiauto.cli record `
   --elements <path>              # Path to elements.yaml (required)
   --scenario-out <path>          # Output scenario YAML (required)
   --window-title-re <regex>      # Filter to specific window (optional)
@@ -50,163 +49,230 @@ uiauto record \
 
 ## Recording Workflow
 
-1. **Start the recorder**:
-   ```bash
-   uiauto record --elements elements.yaml --scenario-out recorded.yaml
-   ```
+### 1. Start Recorder
 
-2. **Interact with your application**:
-   - Click on buttons, fields, etc. → Generates `click` steps
-   - Type into text fields → Generates `type` steps (grouped automatically)
-   - Press hotkeys (Ctrl+L, etc.) → Generates `hotkey` steps
+```bash
+python -m uiauto.cli record `
+  --elements object-maps/elements.yaml `
+  --scenario-out scenarios/recorded. yaml
+```
 
-3. **Stop recording**: 
-   - Press `Ctrl+Alt+Q` (works without terminal focus)
-   - Or press `Ctrl+C` in the terminal (requires terminal to be focused)
+### 2. Interact with Application
 
-4. **Review outputs**:
-   - `scenarios/recorded.yaml` - Generated scenario with semantic steps
-   - `object-maps/elements.yaml` - Updated with new elements
+- **Click** buttons, fields, items → Generates `click` steps
+- **Type** into text fields → Generates `type` steps
+- **Hotkeys** (Ctrl+S, etc.) → Generates `hotkey` steps
+
+### 3. Stop Recording
+
+- Press `Ctrl+Alt+Q` (works globally, no terminal focus needed)
+- Or press `Ctrl+C` in terminal
+
+### 4. Review Outputs
+
+- `scenarios/recorded.yaml`: Generated scenario
+- `object-maps/elements.yaml`: Updated with new elements
 
 ## Generated Steps
 
-### Click Steps
+### Click
+
 ```yaml
 - click:
     element: loginbutton
 ```
 
-### Type Steps
+### Type
+
 ```yaml
 - type:
     element: usernamefield
     text: "AutomationTest"
 ```
 
-### Hotkey Steps
+### Hotkey
+
 ```yaml
 - hotkey:
-    keys: "^l"  # Ctrl+L
+    keys: "^l"
 ```
+
+## Supported Interactions
+
+Currently recorded:
+
+- Single clicks (`click`)
+- Text typing (`type`)
+- Keyboard shortcuts (`hotkey`)
+
+**Not yet recorded** (add manually):
+
+- `double_click`
+- `right_click`
+- `hover`
+- `set_checkbox`
+- `select_combobox`
+- `select_list_item`
+- `wait` steps
+- Assertions
 
 ## Element Locator Strategy
 
-The recorder generates element definitions using inspector logic:
+Recorder generates locators with this priority:
 
-1. **Preferred**: `name` (Accessible.name) - Best for QtQuick
-2. **Fallback**: `auto_id` (WPF/WinForms automation ID)
-3. **Fallback**: `title` (window text)
-4. **Fallback**: `class_name` + `control_type`
+1. `name` + `control_type` (best for QtQuick)
+2. `auto_id` + `control_type`
+3. `title` + `control_type`
+4. `class_name` + `control_type`
 
 Example generated element:
+
 ```yaml
 loginbutton:
   window: main
   when:
     state: default
   locators:
-  - name: loginButton
-    control_type: Button
-  - name_re: (?i)loginButton
-    control_type: Button
-  - class_name: Button_QMLTYPE_4
-    control_type: Button
+    - name: loginButton
+      control_type: Button
+    - name_re: (?i)loginButton
+      control_type: Button
+    - class_name: Button_QMLTYPE_4
+      control_type: Button
 ```
 
 ## State Management
 
-Use the `--state` option to record elements in different UI states:
+Record elements for different UI states:
 
 ```bash
-# Record in "login" state
-uiauto record --elements elements.yaml --scenario-out login.yaml --state login
+# Login screen
+uiauto record \
+  --elements object-maps/elements. yaml \
+  --scenario-out scenarios/login.yaml \
+  --state login
 
-# Record in "main" state
-uiauto record --elements elements.yaml --scenario-out main.yaml --state main
+# Main screen
+uiauto record \
+  --elements object-maps/elements. yaml \
+  --scenario-out scenarios/main.yaml \
+  --state main
 ```
 
-Elements with the same base name but different states will be automatically suffixed:
+Elements with same name in different states get suffixed:
+
 - `taskinput` (state: default)
 - `taskinput__login` (state: login)
 
-## Limitations
+## Enhancing Recorded Scenarios
 
-- **Windows Only**: Requires Windows with UIA support
-- **Focus-Based**: Only captures elements that receive keyboard focus
-- **Best-Effort**: May miss very transient UI elements
-- **No Wait Steps**: Wait steps must be added manually if needed
-- **No Validation**: Recorded steps are actions only, no assertions
+### Add Waits
 
-## Tips
+Insert explicit wait steps for async UI:
 
-1. **Window Filtering**: Always use `--window-title-re` to avoid capturing interactions with other apps
-2. **Slow Down**: Perform actions deliberately with small pauses between steps
-3. **Stop Recording**: Use `Ctrl+Alt+Q` to stop without switching to terminal, or `Ctrl+C` in the terminal
-4. **Review Output**: Always review and edit the recorded scenario before using it
-5. **Add Waits**: Insert `wait` steps manually for elements that load asynchronously
-6. **Test Playback**: Run the recorded scenario to verify it works correctly
+```yaml
+steps:
+  - click:
+      element: loginbutton
 
-## Debugging
+  # Add wait
+  - wait:
+      element: dashboard
+      state: visible
+      timeout: 10
 
-Enable debug mode to capture detailed element snapshots:
-
-```bash
-uiauto record \
-  --elements elements.yaml \
-  --scenario-out recorded.yaml \
-  --debug-json-out debug_snapshots.json
+  - type:
+      element: searchfield
+      text: "query"
 ```
 
-This creates a JSON file with all captured element information for troubleshooting.
+### Add Assertions
 
-## Example Session
+Validate UI state:
 
-```bash
-$ uiauto record --elements object-maps/elements.yaml --scenario-out scenarios/test.yaml --window-title-re "MyApp"
+```yaml
+steps:
+  - click:
+      element: submitbutton
 
-🎬 Recording started. Interact with the application.
-   Press Ctrl+Alt+Q to stop recording (or Ctrl+C in console).
-
-  Press Ctrl+Alt+Q to stop recording (or Ctrl+C in console)...
-
-  🖱️  Click: loginbutton
-  ⌨️  Type: usernamefield = 'TestUser'
-  🖱️  Click: submitbutton
-  ⌨️  Hotkey: ^l
-
-  🛑 Stop hotkey detected (Ctrl+Alt+Q)
-⏹️  Stopping recording...
-✅ Recording stopped. Captured 4 steps.
-📝 Scenario saved to: scenarios/test.yaml
-🗺️  Elements saved to: object-maps/elements.yaml
-    Added/updated 3 elements
+  # Add assertion
+  - assert_text_contains:
+      element: statuslabel
+      substring: "Success"
 ```
 
-## Integration with Existing Scenarios
+### Add Variables
 
-Recorded scenarios can be:
-- Used as-is with `uiauto run`
-- Edited to add variables, waits, or assertions
-- Combined with manually written steps
-- Used as templates for parameterized tests
+Replace hardcoded values:
 
-Example editing recorded scenario:
 ```yaml
 vars:
   username: TestUser
 
 steps:
-  # Add explicit wait before recorded click
-  - wait:
-      element: loginbutton
-      state: visible
-  
-  # Recorded click (unmodified)
-  - click:
-      element: loginbutton
-  
-  # Edit recorded type to use variable
   - type:
       element: usernamefield
       text: ${username}
+```
+
+### Add Control-Specific Operations
+
+Replace generic clicks with semantic operations:
+
+```yaml
+# Replace:
+- click:
+    element: acceptterms
+
+# With:
+- set_checkbox:
+    element: acceptterms
+    checked: true
+```
+
+## Limitations
+
+- **Windows Only**: Requires Windows with UIA
+- **Focus-Based**: Only captures elements receiving keyboard focus
+- **Best-Effort**: May miss transient UI elements
+- **Actions Only**: No assertions or waits generated
+- **Subset of Keywords**: Only click/type/hotkey supported
+
+## Tips
+
+1. **Window Filtering**: Use `--window-title-re` to avoid capturing other apps
+2. **Slow Actions**: Perform actions deliberately with pauses
+3. **Stop Hotkey**: Use `Ctrl+Alt+Q` (works without terminal focus)
+4. **Review Output**: Always review and enhance recorded scenarios
+5. **Add Waits**: Insert waits for async operations
+6. **Test Playback**: Run recorded scenario to verify correctness
+
+## Debugging
+
+Enable debug mode:
+
+```bash
+uiauto record \
+  --elements object-maps/elements.yaml \
+  --scenario-out scenarios/recorded.yaml \
+  --debug-json-out debug_snapshots.json
+```
+
+This creates a JSON file with detailed element information for troubleshooting.
+
+## Example Session
+
+```bash
+$ uiauto record --elements object-maps/elements.yaml --scenario-out scenarios/test.yaml
+
+🎬 Recording started.  Press Ctrl+Alt+Q to stop.
+
+  🖱️  Click: loginbutton
+  ⌨️  Type: usernamefield = 'TestUser'
+  🖱️  Click: submitbutton
+  ⌨️  Hotkey: ^s
+
+🛑 Stopped. Captured 4 steps.
+📝 Scenario:  scenarios/test.yaml
+🗺️  Elements: object-maps/elements.yaml (3 elements added)
 ```
