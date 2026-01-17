@@ -120,7 +120,13 @@ class Runner:
                 if not isinstance(args, dict):
                     raise ValueError(f"Step args must be a mapping at index {idx}: {step}")
 
-                step_rec = {"index": idx, "keyword": keyword, "args": args, "status": "running"}
+                step_rec = {
+                    "index": idx,
+                    "keyword": keyword,
+                    "args": args,
+                    "status": "running",
+                    "started_at": time.time(),
+                }
                 report["steps"].append(step_rec)
 
                 try:
@@ -130,6 +136,11 @@ class Runner:
                     step_rec["status"] = "failed"
                     step_rec["error"] = f"{type(e).__name__}: {e}"
                     raise
+                finally:
+                    step_rec["duration_sec"] = round(time.time() - step_rec["started_at"], 3)
+                    # Remove raw timestamp if you don't want it in the report
+                    step_rec.pop("started_at", None)
+
 
             report["status"] = "passed"
             return report
