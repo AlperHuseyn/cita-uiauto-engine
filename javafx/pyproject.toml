@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uiauto-javafx"
+version = "1.0.0"
+description = "JavaFX UI automation with Java Access Bridge"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "UIAuto Contributors"}
+]
+dependencies = [
+    "uiauto-core==1.0.0",
+    "JPype1>=1.4.0",
+    "pyyaml>=5.4",
+]
+
+[project.scripts]
+uiauto-javafx = "uiauto_javafx.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/AlperHuseyn/cita-uiauto-engine"
+Repository = "https://github.com/AlperHuseyn/cita-uiauto-engine"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["uiauto_javafx*"]
