@@ -180,12 +180,12 @@ class Runner:
                 with open(report_path, "w", encoding="utf-8") as f:
                     json.dump(report, f, indent=2)
 
-    def _execute(self, keyword: str, args: Dict[str, Any], sess: Session, actions: Actions) -> None:
+    def _execute(self, keyword: str, args: Dict[str, Any], sess: Any, actions: Any) -> None:
         """
         @brief Execute single scenario step.
         @param keyword Step keyword
         @param args Step arguments
-        @param sess Session instance
+        @param sess Session instance (ISession)
         @param actions Actions instance
         @throws ValueError if keyword unknown
         """
