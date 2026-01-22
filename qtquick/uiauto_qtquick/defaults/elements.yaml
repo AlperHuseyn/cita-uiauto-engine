@@ -1,0 +1,20 @@
+app:
+  backend: uia
+  default_timeout: 10
+  polling_interval: 0.2
+  artifacts_dir: artifacts
+  strict_locator_keys: true
+  ignore_titlebar_buttons: true
+
+windows:
+  main:
+    locators:
+      - title_re: ".*"
+
+elements:
+  # Example generic element. Replace with your app’s object map entries.
+  any_button_named_ok:
+    window: main
+    locators:
+      - control_type: Button
+        title_re: "(?i)ok"
