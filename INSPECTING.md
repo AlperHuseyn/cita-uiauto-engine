@@ -1,3 +1,11 @@
+# DEPRECATED
+
+This documentation has been moved to `qtquick/docs/INSPECTING.md`
+
+See the new monorepo structure in README.md
+
+---
+
 # Inspecting UI (`uiauto inspect`)
 
 `uiauto inspect` scans visible desktop windows (UIA) and dumps control information to help you build or troubleshoot `elements.yaml`.

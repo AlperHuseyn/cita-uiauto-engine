@@ -1,3 +1,11 @@
+# DEPRECATED
+
+This documentation has been moved to `qtquick/docs/RECORDING.md`
+
+See the new monorepo structure in README.md
+
+---
+
 # Recording User Interactions
 
 The `uiauto record` command captures user interactions with a Windows application and generates semantic YAML scenarios compatible with `uiauto run`.

@@ -1,3 +1,11 @@
+# DEPRECATED
+
+This documentation has been moved to `qtquick/docs/RUNNING.md`
+
+See the new monorepo structure in README.md
+
+---
+
 # Running Scenarios (`uiauto run`)
 
 `uiauto run` executes a YAML scenario (steps) using an object map (`elements.yaml`).
@@ -65,7 +73,7 @@ vars:
 
 steps:
   - open_app:
-      path: "C:\\path\\to\\App.exe"
+      path: "C:\path\to\App.exe"
 
   - wait:
       element: loginbutton
@@ -135,7 +143,7 @@ python -m uiauto.cli run `
 ```yaml
 steps:
   - open_app:
-      path: "C:\\path\\App.exe"
+      path: "C:\path\App.exe"
       wait_for_idle: false
 ```
 
@@ -145,7 +153,7 @@ steps:
 python -m uiauto.cli run `
   --elements object-maps/elements.yaml `
   --scenario scenarios/scenario.yaml `
-  --app "C:\\path\\App.exe"
+  --app "C:\path\App.exe"
 ```
 
 ## Available Keywords
@@ -369,7 +377,7 @@ Start application.
 
 ```yaml
 - open_app:
-    path: "C:\\path\\App.exe"
+    path: "C:\path\App.exe"
     wait_for_idle: false
 ```
 
@@ -409,7 +417,7 @@ vars:
 
 steps:
   - open_app:
-      path: "C:\\MyApp\\App.exe"
+      path: "C:\MyApp\App.exe"
 
   - wait:
       element: loginbutton
