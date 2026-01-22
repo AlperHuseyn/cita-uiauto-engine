@@ -169,7 +169,6 @@ class Runner:
                     json.dump(report, f, indent=2)
 
     def _execute(self, keyword: str, args: Dict[str, Any], session: ISession, actions: Any) -> None:
-    def _execute(self, keyword: str, args: Dict[str, Any], session: ISession, actions: Any) -> None:
         """
         @brief Execute single scenario step.
         @param keyword Step keyword
