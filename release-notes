@@ -1,0 +1,302 @@
+Release Notes - cita-uiauto-engine v1.1.0  
+Release Date: 2026-02-01  
+Release Type: Minor Release (New Features)
+
+## 🎯 Özet  
+Bu sürüm, UI otomasyon framework'üne gelişmiş bekleme ve yeniden deneme mekanizmaları eklemektedir. En önemli eklenti, orijinal exception'ları koruyarak debugging sürecini önemli ölçüde kolaylaştıran `wait_until_passes` fonksiyonudur.
+
+## ✨ Yeni Özellikler  
+
+### wait_until_passes Fonksiyonu  
+Bir fonksiyonu, belirtilen exception'ları fırlatmayı bırakana kadar veya timeout dolana kadar tekrar tekrar çalıştırır. Orijinal exception korunarak debug kolaylığı sağlar.
+
+```python
+from uiauto.waits import wait_until_passes
+
+result = wait_until_passes(
+    my_function,
+    timeout=10,
+    interval=0.5,
+    exceptions=(ElementNotFoundError,),
+    description="clicking submit button"
+)
+```
+
+Önemli Özellikler:
+- Orijinal exception `TimeoutError.original_exception` attribute'unda saklanır
+- Deneme sayısı `TimeoutError.attempt_count` ile erişilebilir
+- Geçen süre `TimeoutError.elapsed_time` ile takip edilebilir
+- Argüman desteği: `*args` ve `**kwargs` fonksiyona aktarılır
+
+---
+
+### wait_until_not Fonksiyonu  
+Bir koşulun false olmasını bekler. Loading spinner'ların kaybolması, modal'ların kapanması gibi senaryolar için idealdir.
+
+```python
+from uiauto.waits import wait_until_not
+
+wait_until_not(
+    lambda: spinner.is_visible(),
+    timeout=30,
+    description="loading spinner to disappear"
+)
+```
+
+---
+
+### wait_for_any Fonksiyonu  
+Birden fazla koşuldan herhangi birinin true olmasını bekler. Başarı mesajı veya hata dialogu gibi alternatif UI durumlarını handle etmek için kullanılır.
+
+```python
+from uiauto.waits import wait_for_any
+
+result_index = wait_for_any(
+    [
+        lambda: success_label.is_visible(),
+        lambda: error_dialog.exists(),
+    ],
+    timeout=10,
+    descriptions=["success message", "error dialog"]
+)
+
+if result_index == 0:
+    print("Success!")
+else:
+    print("Error occurred")
+```
+
+### retry Fonksiyonu  
+Timeout yerine deneme sayısına göre yeniden deneme yapar. Flaky operasyonlar için uygundur.
+
+```python
+from uiauto.waits import retry
+
+result = retry(
+    flaky_operation,
+    max_attempts=3,
+    interval=0.5,
+    exceptions=(Exception,),
+    description="flaky operation"
+)
+```
+
+## 🔧 İyileştirmeler  
+
+TimeoutError sınıfı genişletildi. `TimeoutError` exception'ı artık debugging için kritik bilgileri içermektedir:
+
+Attribute | Tip | Açıklama  
+--- | --- | ---  
+`original_exception` | `BaseException` | Son fırlatılan exception  
+`description` | `str` | İnsan-okunabilir açıklama  
+`timeout` | `float` | Timeout süresi (saniye)  
+`attempt_count` | `int` | Toplam deneme sayısı  
+`elapsed_time` | `float` | Geçen süre (saniye)  
+
+### Yeni Metodlar:
+
+```python
+# Kök neden exception'ını al
+root_cause = error.get_root_cause()
+
+# Formatted traceback string al
+traceback_str = error.get_traceback_str()
+```
+
+### wait_until Fonksiyonu Güncellendi  
+
+Önceki davranış:
+
+```python
+# Exception string'e dönüştürülüyor, stack trace kayboluyor
+raise TimeoutError(f"...{last_exc}")
+```
+
+Yeni davranış:
+
+```python
+# Exception korunuyor, stack trace erişilebilir
+error = TimeoutError("...")
+error.original_exception = last_exception
+raise error
+```
+
+## 🆕 Yeni Exception Sınıfları  
+
+### ElementNotVisibleError  
+Element mevcut ama görünür değilken fırlatılır.
+
+```python
+from uiauto.exceptions import ElementNotVisibleError
+
+raise ElementNotVisibleError("submit_button", "Element is hidden behind modal")
+```
+
+### ElementNotEnabledError  
+Element görünür ama aktif değilken fırlatılır.
+
+```python
+from uiauto.exceptions import ElementNotEnabledError
+
+raise ElementNotEnabledError("submit_button", "Button is disabled")
+```
+
+### StaleElementError  
+Cache'lenmiş element referansı artık geçerli değilken fırlatılır.
+
+```python
+from uiauto.exceptions import StaleElementError
+
+raise StaleElementError("dynamic_element", "Page was refreshed")
+```
+
+### 📁 Değişen Dosyalar  
+
+Dosya | Değişiklik Tipi | Açıklama  
+--- | --- | ---  
+`uiauto/waits.py` | 🔄 Güncellendi | 4 yeni fonksiyon eklendi, wait_until iyileştirildi  
+`uiauto/exceptions.py` | 🔄 Güncellendi | TimeoutError genişletildi, 3 yeni exception eklendi  
+`tests/test_waits.py` | ➕ Yeni | Kapsamlı test suite eklendi  
+
+## 📊 API Değişiklikleri  
+
+Bu sürüm geriye uyumludur. Mevcut kodlar değişiklik olmadan çalışmaya devam edecektir.
+
+Yeni Public API  
+
+```python
+# waits.py
+wait_until_passes(func, timeout, interval=0.2, exceptions=(Exception,), description="operation", *args, **kwargs) -> T
+wait_until_not(predicate, timeout, interval=0.2, description="condition") -> None
+wait_for_any(predicates, timeout, interval=0.2, descriptions=None) -> int
+retry(func, max_attempts=3, interval=0.5, exceptions=(Exception,), description="operation", *args, **kwargs) -> T
+
+# exceptions.py
+class ElementNotVisibleError(UIAutoError)
+class ElementNotEnabledError(UIAutoError)
+class StaleElementError(UIAutoError)
+
+# TimeoutError yeni attribute'lar
+TimeoutError.original_exception: Optional[BaseException]
+TimeoutError.description: Optional[str]
+TimeoutError.timeout: Optional[float]
+TimeoutError.attempt_count: Optional[int]
+TimeoutError.elapsed_time: Optional[float]
+TimeoutError.get_root_cause() -> Optional[BaseException]
+TimeoutError.get_traceback_str() -> str
+```
+
+## 🧪 Test Coverage  
+
+Yeni eklenen `tests/test_waits.py` dosyası aşağıdaki test sınıflarını içermektedir:
+
+Test Sınıfı | Test Sayısı | Kapsam  
+--- | --- | ---  
+`TestWaitUntil` | 5 | Temel bekleme fonksiyonelliği  
+`TestWaitUntilPasses` | 5 | Exception handling ve retry logic  
+`TestWaitUntilNot` | 2 | Negatif koşul bekleme  
+`TestWaitForAny` | 3 | Çoklu koşul bekleme  
+`TestRetry` | 3 | Deneme sayısı bazlı retry  
+`TestTimeoutErrorAttributes` | 2 | Exception attribute'ları  
+**Toplam** | 20 |  |
+
+**Testleri çalıştırma:**
+
+```bash
+pytest tests/test_waits.py -v
+```
+
+## 📖 Kullanım Örnekleri  
+
+**Senaryo 1:** Dinamik Element Bekleme  
+
+```python
+from uiauto.waits import wait_until_passes
+from uiauto.exceptions import ElementNotFoundError
+
+def click_dynamic_button():
+    element = resolver.resolve("dynamic_button")
+    element.click()
+    return element
+
+try:
+    result = wait_until_passes(
+        click_dynamic_button,
+        timeout=30,
+        interval=1.0,
+        exceptions=(ElementNotFoundError,),
+        description="clicking dynamic button"
+    )
+except TimeoutError as e:
+    print(f"Failed after {e.attempt_count} attempts")
+    print(f"Last error: {e.original_exception}")
+    print(f"Traceback:\n{e.get_traceback_str()}")
+```
+
+**Senaryo 2:** Form Submit Sonrası Bekleme  
+
+```python
+from uiauto.waits import wait_for_any
+
+def check_success():
+    try:
+        return resolver.resolve("success_toast").is_visible()
+    except:
+        return False
+
+def check_error():
+    try:
+        return resolver.resolve("error_message").is_visible()
+    except:
+        return False
+
+# Submit butonuna tıkla
+actions.click("submit_button")
+
+# Sonucu bekle
+result = wait_for_any(
+    [check_success, check_error],
+    timeout=15,
+    descriptions=["success toast", "error message"]
+)
+
+if result == 0:
+    print("Form submitted successfully!")
+else:
+    error_text = resolver.resolve("error_message").get_text()
+    print(f"Form error: {error_text}")
+```
+
+**Senaryo 3:** Loading Durumu Yönetimi  
+
+```python
+from uiauto.waits import wait_until_not
+
+# Submit işlemi başlat
+actions.click("submit_button")
+
+# Loading spinner'ın kaybolmasını bekle
+wait_until_not(
+    lambda: resolver.resolve("loading_spinner").is_visible(),
+    timeout=60,
+    interval=0.5,
+    description="loading to complete"
+)
+
+# İşlem tamamlandı
+print("Operation complete!")
+```
+
+## ⚠️ Breaking Changes  
+
+Bu sürümde breaking change bulunmamaktadır.  
+Tüm mevcut API'ler geriye uyumlu şekilde korunmuştur.
+
+## 🔜 Sonraki Sürümde Planlanan  
+- ActionLogger entegrasyonu  
+- TimeConfig sistemi  
+- Element Overlay (Recorder için)  
+- Multi-Strategy Element Identification  
+
+
+> **Full Changelog: v1.0.0...v1.1.0**
