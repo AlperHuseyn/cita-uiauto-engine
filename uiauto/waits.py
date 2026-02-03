@@ -21,7 +21,7 @@ def wait_until(
     - If predicate returns False/None, we retry until timeout.
     """
     end = time.time() + timeout
-    last_exc: Optional[BaseException] = None
+    last_exception: Optional[BaseException] = None
 
     while time.time() < end:
         try:
@@ -29,7 +29,7 @@ def wait_until(
             if result:
                 return result
         except BaseException as e:
-            last_exc = e
+            last_exception = e
         time.sleep(interval)
 
     if last_exception:
