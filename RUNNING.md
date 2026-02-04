@@ -99,6 +99,7 @@ python -m uiauto.cli run `
 ### Exit Codes
 
 - `0`: Scenario passed
+- `1`: Configuration error
 - `2`: Scenario failed
 
 ### Output
@@ -113,8 +114,8 @@ Supply external variables via JSON file:
 ```bash
 python -m uiauto.cli run `
   --elements object-maps/elements.yaml `
-  --scenario scenarios/scenario. yaml `
-  --vars vars. json
+  --scenario scenarios/scenario.yaml `
+  --vars vars.json
 ```
 
 `vars.json`:
@@ -213,6 +214,23 @@ Parameters:
 - `text` (required): text to type
 - `clear` (optional, default: true): clear existing text first
 
+#### `click_and_type`
+
+Click an element and type text in one step. Useful for fields that need focus before typing.
+
+```yaml
+- click_and_type:
+    element: searchfield
+    text: "search query"
+    clear: true
+```
+
+Parameters:
+
+- `element` (required): element to click and type into
+- `text` (required): text to type
+- `clear` (optional, default: true): clear existing text first
+
 #### `hotkey`
 
 Send global keyboard combination.
@@ -254,6 +272,103 @@ States:
 - `visible`: element is visible on screen
 - `enabled`: element is visible and enabled
 
+#### `wait_for_gone`
+
+Wait for an element to disappear from the UI.
+
+```yaml
+- wait_for_gone:
+    element: loadingspinner
+    timeout: 30
+```
+
+Parameters:
+
+- `element` (required): element to wait for disappearance
+- `timeout` (optional): max wait time in seconds
+
+Useful for:
+
+- Waiting for loading indicators to disappear
+- Waiting for dialogs to close
+- Waiting for transitions to complete
+
+#### `wait_for_any`
+
+Wait for any one of multiple elements to appear. Returns when the first element is found.
+
+```yaml
+- wait_for_any:
+    elements:
+      - successmessage
+      - errormessage
+      - timeoutdialog
+    timeout: 30
+```
+
+Parameters:
+
+- `elements` (required): list of element names to wait for
+- `timeout` (optional): max wait time in seconds
+
+Useful for:
+
+- Handling multiple possible outcomes
+- Detecting success or failure states
+- Waiting for any of several dialogs
+
+### Conditional Actions
+
+#### `click_if_exists`
+
+Click an element if it exists, otherwise continue without error.
+
+```yaml
+- click_if_exists:
+    element: cookiebanner_accept
+    timeout: 2
+```
+
+Parameters:
+
+- `element` (required): element to click if present
+- `timeout` (optional, default: 2): how long to wait for element
+
+Useful for:
+
+- Dismissing optional dialogs (cookie banners, tips, etc.)
+- Handling conditional UI elements
+- Non-blocking optional interactions
+
+### Text Operations
+
+#### `get_text`
+
+Get text content of an element. Optionally store in a variable.
+
+```yaml
+- get_text:
+    element: statuslabel
+    store_as: current_status
+```
+
+Parameters:
+
+- `element` (required): element to get text from
+- `store_as` (optional): variable name to store the text
+
+The stored variable can be used in subsequent steps:
+
+```yaml
+- get_text:
+    element: totalprice
+    store_as: price
+
+- assert_text_contains:
+    element: confirmationdialog
+    substring: ${price}
+```
+
 ### Control-Specific Operations
 
 #### `set_checkbox`
@@ -287,7 +402,33 @@ Select by index:
     by_index: true
 ```
 
+For QtQuick ComboBoxes, use `item_element`:
+
+```yaml
+- select_combobox:
+    element: prioritycombo
+    option: "High"
+    item_element: priority_high_item
+```
+
 **Robustness**: Tries direct select, expand+click item, and type+enter.
+
+#### `select_combobox_item`
+
+Select an item in a QtQuick ComboBox by clicking the combobox, then clicking the list item. Designed specifically for QtQuick where standard selection patterns don't work.
+
+```yaml
+- select_combobox_item:
+    combobox: prioritycombo
+    item: priority_high_item
+```
+
+Parameters:
+
+- `combobox` (required): ComboBox element name
+- `item` (required): ListItem element name to select
+
+This is the recommended approach for QtQuick ComboBoxes.
 
 #### `select_list_item`
 
@@ -399,6 +540,36 @@ Force terminate application.
 - kill_app: {}
 ```
 
+## Keyword Reference Summary
+
+| Category        | Keyword                 | Description                       |
+| --------------- | ----------------------- | --------------------------------- |
+| **Clicks**      | `click`                 | Single click                      |
+|                 | `double_click`          | Double click                      |
+|                 | `right_click`           | Right click (context menu)        |
+|                 | `hover`                 | Mouse hover                       |
+|                 | `click_if_exists`       | Click if element exists           |
+| **Text**        | `type`                  | Type text into element            |
+|                 | `click_and_type`        | Click then type (one step)        |
+|                 | `get_text`              | Get element text                  |
+| **Waits**       | `wait`                  | Wait for element state            |
+|                 | `wait_for_gone`         | Wait for element to disappear     |
+|                 | `wait_for_any`          | Wait for any of multiple elements |
+| **Checkboxes**  | `set_checkbox`          | Set checkbox state                |
+|                 | `assert_checkbox_state` | Assert checkbox state             |
+| **ComboBoxes**  | `select_combobox`       | Select combobox option            |
+|                 | `select_combobox_item`  | QtQuick combobox selection        |
+| **Lists**       | `select_list_item`      | Select list item                  |
+|                 | `assert_count`          | Assert item count                 |
+| **Assertions**  | `assert`                | Assert element state              |
+|                 | `assert_text_equals`    | Assert text equals                |
+|                 | `assert_text_contains`  | Assert text contains              |
+| **Hotkeys**     | `hotkey`                | Send keyboard shortcut            |
+| **App Control** | `open_app`              | Start application                 |
+|                 | `connect`               | Connect to running app            |
+|                 | `close_window`          | Close window                      |
+|                 | `kill_app`              | Force terminate                   |
+
 ## Complete Example
 
 ```yaml
@@ -416,6 +587,11 @@ steps:
       state: visible
       timeout: 15
 
+  # Dismiss optional cookie banner
+  - click_if_exists:
+      element: cookiebanner_close
+      timeout: 2
+
   - type:
       element: usernamefield
       text: ${username}
@@ -427,6 +603,18 @@ steps:
   - click:
       element: loginbutton
 
+  # Wait for loading to complete
+  - wait_for_gone:
+      element: loadingspinner
+      timeout: 30
+
+  # Handle success or error
+  - wait_for_any:
+      elements:
+        - dashboard
+        - errordialog
+      timeout: 15
+
   - wait:
       element: dashboard
       state: visible
@@ -435,13 +623,19 @@ steps:
       element: welcomelabel
       substring: "Welcome"
 
+  # Get current balance for later verification
+  - get_text:
+      element: balancelabel
+      store_as: initial_balance
+
   - set_checkbox:
       element: rememberme
       checked: true
 
-  - select_combobox:
-      element: countryselect
-      option: ${country}
+  # QtQuick ComboBox selection
+  - select_combobox_item:
+      combobox: countrycombo
+      item: country_turkey_item
 
   - double_click:
       element: settingsicon
@@ -486,14 +680,22 @@ app:
 **Timing issues**:
 
 1. Add explicit `wait` steps before interactions
-2. Increase `default_timeout` in elements.yaml
-3. Use `wait_for_idle:  true` in `open_app`
+2. Use `wait_for_gone` for loading indicators
+3. Increase `default_timeout` in elements.yaml
+4. Use `wait_for_idle: true` in `open_app`
 
 **QtQuick apps**:
 
 1. Prefer `name`/`name_re` locators (maps to `Accessible.name`)
 2. Avoid `auto_id` (often empty in QtQuick)
-3. Use inspector to verify `element_info.name` values
+3. Use `select_combobox_item` for ComboBox selection
+4. Use inspector to verify `element_info.name` values
+
+**Conditional UI**:
+
+1. Use `click_if_exists` for optional dialogs
+2. Use `wait_for_any` for multiple possible outcomes
+3. Use `wait_for_gone` for disappearing elements
 
 ### Validation
 
