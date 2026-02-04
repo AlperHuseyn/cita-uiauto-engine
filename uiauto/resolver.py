@@ -1,4 +1,9 @@
 # uiauto/resolver.py
+"""
+@file resolver.py
+@brief Resolves windows and elements by semantic names using repository specs.
+"""
+
 from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
@@ -9,6 +14,7 @@ from .element import Element, ElementMeta
 from .exceptions import LocatorAttempt, WindowNotFoundError, ElementNotFoundError
 from .waits import wait_until
 from .artifacts import make_artifacts
+from .context import ActionContextManager
 
 
 TITLEBAR_BUTTON_TITLES = {"Close", "Minimize", "Maximize"}
@@ -39,8 +45,7 @@ def _is_name_based_locator(locator: Dict[str, Any]) -> bool:
 
 
 def _sanitize_locator(locator: Dict[str, Any]) -> Dict[str, Any]:
-    # Only pass pywinauto-recognized kwargs to child_window/window search
-    # Note: name/name_re are NOT pywinauto native, so we'll handle them separately
+    """Only pass pywinauto-recognized kwargs to child_window/window search."""
     allowed = {"auto_id", "title", "title_re", "control_type", "class_name", "best_match", "found_index", "process", "handle"}
     return {k: v for k, v in locator.items() if k in allowed}
 
@@ -52,18 +57,45 @@ class Resolver:
     """
 
     def __init__(self, session: Session, repo: Repository):
+        """
+        @param session Session instance for UI automation backend
+        @param repo Repository with element/window specifications
+        """
         self.session = session
         self.repo = repo
+        self._element_cache: Dict[str, Element] = {}
+        self._cache_enabled: bool = True
 
     @property
     def timeout(self) -> float:
+        """Default timeout from repository configuration."""
         return self.repo.app.default_timeout
 
     @property
     def interval(self) -> float:
+        """Polling interval from repository configuration."""
         return self.repo.app.polling_interval
+    
+    def enable_cache(self, enabled: bool = True) -> None:
+        """Enable or disable element caching."""
+        self._cache_enabled = enabled
+        if not enabled:
+            self._element_cache.clear()
+    
+    def clear_cache(self) -> None:
+        """Clear the element cache."""
+        self._element_cache.clear()
 
-    def resolve_window(self, window_name: str):
+    def resolve_window(self, window_name: str, timeout: Optional[float] = None) -> Any:
+        """
+        Resolve a window by name.
+        
+        @param window_name Logical window name from configuration
+        @param timeout Override timeout (uses default if None)
+        @return Window wrapper object
+        @throws WindowNotFoundError if window not found within timeout
+        """
+        effective_timeout = timeout if timeout is not None else self.timeout
         wspec = self.repo.get_window_spec(window_name)
         locators = wspec.get("locators", [])
         attempts: List[LocatorAttempt] = []
@@ -71,7 +103,6 @@ class Resolver:
 
         def try_one(locator: Dict[str, Any]):
             safe = _sanitize_locator(locator)
-            # Prefer app_window when possible; fallback to desktop
             try:
                 if self.session.app:
                     w = self.session.app_window(**safe)
@@ -80,14 +111,18 @@ class Resolver:
             except Exception:
                 w = self.session.desktop_window(**safe)
 
-            # Wait until exists/visible
             def pred():
                 try:
                     return w.exists() and w.is_visible()
                 except Exception:
                     return False
 
-            wait_until(pred, timeout=self.timeout, interval=self.interval, description=f"window '{window_name}' exists+visible")
+            wait_until(
+                pred,
+                timeout=effective_timeout,
+                interval=self.interval,
+                description=f"window '{window_name}' exists+visible"
+            )
             return w
 
         for locator in locators:
@@ -101,7 +136,6 @@ class Resolver:
         # Artifacts: try best guess window from Desktop by broad regex if provided
         artifacts = {}
         try:
-            # If there's a title_re in any locator, attempt it for artifacts
             title_re = None
             for loc in locators:
                 if "title_re" in loc:
@@ -113,65 +147,171 @@ class Resolver:
         except Exception:
             pass
 
-        raise WindowNotFoundError(window_name, attempts=attempts, timeout=self.timeout, last_error=last_error, artifacts=artifacts)
-
-    def resolve(self, element_name: str, overrides: Optional[Dict[str, Any]] = None) -> Element:
-        overrides = overrides or {}
-        espec = self.repo.get_element_spec(element_name)
-        window_name = espec["window"]
-        window = self.resolve_window(window_name)
-
-        locators = list(espec.get("locators", []))
-        # Apply overrides by prepending a locator attempt (highest priority)
-        if overrides:
-            locators = [overrides] + locators
-
-        attempts: List[LocatorAttempt] = []
-        last_error: Optional[str] = None
-
-        for locator in locators:
-            try:
-                elem = self._resolve_in_window(window, locator)
-                is_name_based = _is_name_based_locator(locator)
-                meta = ElementMeta(
-                    name=element_name, 
-                    window_name=window_name, 
-                    used_locator=locator,
-                    found_via_name=is_name_based
-                )
-                wrapped = Element(elem, meta=meta, default_timeout=self.timeout, polling_interval=self.interval)
-                
-                # For name/name_re based locators, skip the exists() wait since descendants() already verified presence
-                # QtQuick controls found via element_info.name matching may not respond correctly to exists() checks
-                if not is_name_based:
-                    wrapped.wait("exists", timeout=self.timeout)
-                
-                return wrapped
-            except Exception as e:
-                last_error = f"{type(e).__name__}: {e}"
-                attempts.append(LocatorAttempt(kind="element", locator=locator, error=last_error))
-
-        artifacts = {}
-        try:
-            artifacts = make_artifacts(window, self.repo.app.artifacts_dir, f"element_{element_name}")
-        except Exception:
-            pass
-
-        raise ElementNotFoundError(
-            element_name=element_name,
-            window_name=window_name,
+        raise WindowNotFoundError(
+            window_name,
             attempts=attempts,
-            timeout=self.timeout,
+            timeout=effective_timeout,
             last_error=last_error,
-            artifacts=artifacts,
+            artifacts=artifacts
         )
 
-    def _resolve_in_window(self, window, locator: Dict[str, Any]):
+    def resolve(
+        self,
+        element_name: str,
+        overrides: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+        use_cache: bool = True,
+    ) -> Element:
+        """
+        Resolve an element by name.
+        
+        @param element_name Logical element name from configuration
+        @param overrides Optional locator overrides (highest priority)
+        @param timeout Override timeout (uses default if None)
+        @param use_cache Whether to use cached element if available
+        @return Element wrapper object
+        @throws ElementNotFoundError if element not found within timeout
+        """
+        effective_timeout = timeout if timeout is not None else self.timeout
+        overrides = overrides or {}
+        
+        espec = self.repo.get_element_spec(element_name)
+        window_name = espec["window"]
+        
+        # Check cache first
+        cache_key = f"{window_name}::{element_name}"
+        if use_cache and self._cache_enabled and cache_key in self._element_cache:
+            cached = self._element_cache[cache_key]
+            try:
+                if cached.exists():
+                    return cached
+            except Exception:
+                pass
+            del self._element_cache[cache_key]
+        
+        with ActionContextManager.action("resolve", element_name=element_name, window_name=window_name):
+            window = self.resolve_window(window_name)
+
+            locators = list(espec.get("locators", []))
+            if overrides:
+                locators = [overrides] + locators
+
+            attempts: List[LocatorAttempt] = []
+            last_error: Optional[str] = None
+
+            for locator in locators:
+                try:
+                    elem = self._resolve_in_window(window, locator)
+                    is_name_based = _is_name_based_locator(locator)
+                    meta = ElementMeta(
+                        name=element_name, 
+                        window_name=window_name, 
+                        used_locator=locator,
+                        found_via_name=is_name_based
+                    )
+                    
+                    wrapped = Element(
+                        elem,
+                        meta=meta,
+                        default_timeout=effective_timeout,
+                        polling_interval=self.interval,
+                    )
+                    
+                    # For name/name_re based locators, skip exists() wait
+                    if not is_name_based:
+                        wrapped.wait("exists", timeout=effective_timeout)
+                    
+                    # Cache the result
+                    if self._cache_enabled:
+                        self._element_cache[cache_key] = wrapped
+                    
+                    return wrapped
+                except Exception as e:
+                    last_error = f"{type(e).__name__}: {e}"
+                    attempts.append(LocatorAttempt(kind="element", locator=locator, error=last_error))
+
+            artifacts = {}
+            try:
+                artifacts = make_artifacts(window, self.repo.app.artifacts_dir, f"element_{element_name}")
+            except Exception:
+                pass
+
+            raise ElementNotFoundError(
+                element_name=element_name,
+                window_name=window_name,
+                attempts=attempts,
+                timeout=effective_timeout,
+                last_error=last_error,
+                artifacts=artifacts,
+            )
+    
+    def exists(
+        self,
+        element_name: str,
+        timeout: float = 0,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Check if an element exists (optionally with waiting).
+        
+        @param element_name Logical name of the element
+        @param timeout How long to wait (0 = immediate check)
+        @param overrides Optional locator overrides
+        @return True if element exists, False otherwise
+        """
+        try:
+            elem = self.resolve(element_name, overrides=overrides, timeout=max(timeout, 0.5), use_cache=False)
+            return elem.exists()
+        except (ElementNotFoundError, WindowNotFoundError):
+            return False
+    
+    def wait_for_element(
+        self,
+        element_name: str,
+        timeout: Optional[float] = None,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> Element:
+        """
+        Explicitly wait for an element to appear.
+        
+        @param element_name Logical name of the element
+        @param timeout Override timeout
+        @param overrides Optional locator overrides
+        @return Element when found
+        """
+        return self.resolve(element_name, overrides=overrides, timeout=timeout)
+    
+    def wait_for_element_gone(
+        self,
+        element_name: str,
+        timeout: Optional[float] = None,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Wait for an element to disappear.
+        
+        @param element_name Logical name of the element
+        @param timeout Override timeout
+        @param overrides Optional locator overrides
+        @throws TimeoutError if element doesn't disappear
+        """
+        from .waits import wait_until_not
+        
+        effective_timeout = timeout if timeout is not None else self.timeout
+        
+        wait_until_not(
+            lambda: self.exists(element_name, timeout=0, overrides=overrides),
+            timeout=effective_timeout,
+            interval=self.interval,
+            description=f"element '{element_name}' to disappear"
+        )
+
+    def _resolve_in_window(self, window: Any, locator: Dict[str, Any]) -> Any:
         """
         Resolution strategy:
         1) If name/name_re provided, use descendants matching on element_info.name
         2) Try child_window(**locator) directly (fast, scoped) for other locators
-        3) If title/title_re provided and child_window fails, search descendants by control_type and filter
+        3) If title/title_re provided and child_window fails, search descendants
         4) Apply found_index only if provided
         """
         control_type = locator.get("control_type")
@@ -181,7 +321,7 @@ class Resolver:
         title_re = locator.get("title_re")
         found_index = locator.get("found_index")
         
-        # Strategy 1: If name/name_re is provided, use descendants-based matching on element_info.name
+        # Strategy 1: If name/name_re is provided, use descendants-based matching
         if name is not None or name_re is not None:
             try:
                 if control_type:
@@ -191,7 +331,6 @@ class Resolver:
 
                 filtered = []
                 for it in items:
-                    # Match on element_info.name
                     try:
                         elem_name = it.element_info.name
                     except Exception:
@@ -200,7 +339,6 @@ class Resolver:
                     if not _matches_name(elem_name, name=name, name_re=name_re):
                         continue
 
-                    # Optional: ignore titlebar buttons
                     if self.repo.app.ignore_titlebar_buttons:
                         try:
                             t = it.window_text()
@@ -209,13 +347,11 @@ class Resolver:
                         except Exception:
                             pass
 
-                    # QtQuick controls found via descendants are already present
                     filtered.append(it)
 
                 if not filtered:
                     raise RuntimeError("No matching descendants by name found")
 
-                # Sort by visibility preference (visible first)
                 def vis_key(x):
                     try:
                         return 1 if x.is_visible() else 0
@@ -229,7 +365,6 @@ class Resolver:
                         raise IndexError(f"found_index {idx} out of range for {len(filtered)} matches")
                     return filtered[idx]
 
-                # default: first match (most visible)
                 return filtered[0]
             except Exception:
                 raise
@@ -238,7 +373,6 @@ class Resolver:
         safe = _sanitize_locator(locator)
         try:
             cw = window.child_window(**safe)
-            # exists() can raise sometimes; wrap
             def pred():
                 try:
                     return cw.exists()
@@ -249,14 +383,13 @@ class Resolver:
         except Exception:
             pass
 
-        # Strategy 3: descendants-based filtering for title/title_re (more expensive)
+        # Strategy 3: descendants-based filtering for title/title_re
         try:
             if control_type:
                 items = window.descendants(control_type=control_type)
             else:
                 items = window.descendants()
 
-            # Filter by title / regex if present
             filtered = []
             for it in items:
                 try:
@@ -271,7 +404,6 @@ class Resolver:
                 if not ok:
                     continue
 
-                # Optional: ignore titlebar buttons
                 if self.repo.app.ignore_titlebar_buttons:
                     try:
                         if it.friendly_class_name() == "Button" and t in TITLEBAR_BUTTON_TITLES:
@@ -279,7 +411,6 @@ class Resolver:
                     except Exception:
                         pass
 
-                # Prefer visible elements
                 try:
                     if hasattr(it, "is_visible") and not it.is_visible():
                         continue
@@ -297,7 +428,6 @@ class Resolver:
                     raise IndexError(f"found_index {idx} out of range for {len(filtered)} matches")
                 return filtered[idx]
 
-            # default: first match
             return filtered[0]
         except Exception:
             raise

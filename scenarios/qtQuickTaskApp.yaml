@@ -1,20 +1,19 @@
-vars:
-  username: AutomationTest
-  task: "Test Task - Create and Remove"
-
 steps:
   # ===== START APP =====
   - open_app:
       path: C:\Users\alper\source\repos\QtQuickTaskApp-oltan\out\Debug\QtQuickTaskApp.exe
 
   # ===== LOGIN =====
-  - wait:
+  - click:
       element: usernamefield
-      state: visible
 
   - type:
       element: usernamefield
-      text: ${username}
+      text: AlperHuseyn
+
+  - select_combobox_item:
+      combobox: rolecombobox
+      item: guest
 
   - click:
       element: loginbutton
@@ -26,12 +25,15 @@ steps:
 
   - type:
       element: taskinput
-      text: ${task}
+      text: AHD
 
   - click:
       element: addtaskbutton
 
-  # ===== REMOVE TASK =====
+  - click:
+      element: taskcheckbox_0
+
+  # ==== REMOVE TASK =====
   - wait:
       element: removetaskbutton_0
       state: visible
@@ -39,9 +41,14 @@ steps:
   - click:
       element: removetaskbutton_0
 
-  # ===== LOGOUT (CTRL + L) =====
-  - hotkey:
-      keys: "^l"
+  - click:
+      element: clearcompletedbutton
 
+  - click:
+      element: file
+  # ===== LOGOUT (CTRL + L) =====
+  - click:
+      element: logout_ctrl_l
   # ===== EXIT =====
-  - kill_app: {}
+  - hotkey:
+      keys: "^\x11"

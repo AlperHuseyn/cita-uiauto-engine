@@ -60,6 +60,17 @@ elements:
         control_type: CheckBox
       - class_name: CheckBox_QMLTYPE_6
         control_type: CheckBox
+  removetaskbutton_0:
+    window: main
+    when:
+      state: task__added
+    locators:
+      - name: removeTaskButton_0
+        control_type: Button
+      - name_re: (?i)removeTaskButton_0
+        control_type: Button
+      - class_name: Button_QMLTYPE_9
+        control_type: Button
   clearcompletedbutton:
     window: main
     when:
@@ -71,3 +82,80 @@ elements:
         control_type: Button
       - class_name: Button_QMLTYPE_7
         control_type: Button
+  rolecombobox:
+    window: main
+    when:
+      state: default
+    locators:
+      - name: roleComboBox
+        control_type: ComboBox
+      - name_re: (?i)roleComboBox
+        control_type: ComboBox
+      - class_name: ComboBox_QMLTYPE_3
+        control_type: ComboBox
+  user:
+    window: main
+    when:
+      state: default
+    locators:
+      - name: User
+        control_type: ListItem
+      - name_re: (?i)User
+        control_type: ListItem
+      - class_name: ItemDelegate_QMLTYPE_1
+        control_type: ListItem
+  removetaskbutton_0__default:
+    window: main
+    when:
+      state: default
+    locators:
+      - name: removeTaskButton_0
+        control_type: Button
+      - name_re: (?i)removeTaskButton_0
+        control_type: Button
+      - class_name: Button_QMLTYPE_6
+        control_type: Button
+  file:
+    window: main
+    when:
+      state: default
+    locators:
+      - name: File
+        control_type: MenuBar
+      - name_re: (?i)File
+        control_type: MenuBar
+      - class_name: MenuBarItem_QMLTYPE_10
+        control_type: MenuBar
+  logout_ctrl_l:
+    window: main
+    when:
+      state: default
+    locators:
+      - name: "Logout\tCtrl+L"
+        control_type: MenuItem
+      - name_re: "(?i)Logout\\\tCtrl\\+L"
+        control_type: MenuItem
+      - class_name: MenuItem_QMLTYPE_16
+        control_type: MenuItem
+  admin:
+    window: main
+    when:
+      state: default
+    locators:
+      - name: Admin
+        control_type: ListItem
+      - name_re: (?i)Admin
+        control_type: ListItem
+      - class_name: ItemDelegate_QMLTYPE_27
+        control_type: ListItem
+  guest:
+    window: main
+    when:
+      state: default
+    locators:
+      - name: Guest
+        control_type: ListItem
+      - name_re: (?i)Guest
+        control_type: ListItem
+      - class_name: ItemDelegate_QMLTYPE_27
+        control_type: ListItem

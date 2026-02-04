@@ -1,4 +1,9 @@
 # uiauto/runner.py
+"""
+@file runner.py
+@brief Scenario runner for YAML-based test execution.
+"""
+
 from __future__ import annotations
 import json
 import os
@@ -13,6 +18,7 @@ from .repository import Repository
 from .session import Session
 from .resolver import Resolver
 from .actions import Actions
+from .context import ActionContextManager
 from .exceptions import UIAutoError
 
 
@@ -20,6 +26,7 @@ _VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def _substitute(value: Any, variables: Dict[str, Any]) -> Any:
+    """Substitute variables in step arguments."""
     if isinstance(value, str):
         def repl(m):
             key = m.group(1)
@@ -40,6 +47,10 @@ class Runner:
     """
 
     def __init__(self, repo: Repository, schema_path: str):
+        """
+        @param repo Repository with element/window specs
+        @param schema_path Path to JSON schema for scenario validation
+        """
         self.repo = repo
         self.schema_path = os.path.abspath(schema_path)
         self._schema = self._load_schema(self.schema_path)
@@ -47,6 +58,7 @@ class Runner:
 
     @staticmethod
     def _load_yaml(path: str) -> Dict[str, Any]:
+        """Load and parse YAML file."""
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         if not isinstance(data, dict):
@@ -55,10 +67,12 @@ class Runner:
 
     @staticmethod
     def _load_schema(path: str) -> Dict[str, Any]:
+        """Load JSON schema file."""
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     def validate(self, scenario: Dict[str, Any]) -> None:
+        """Validate scenario against JSON schema."""
         errors = sorted(self._validator.iter_errors(scenario), key=lambda e: e.path)
         if errors:
             lines = ["Scenario schema validation failed:"]
@@ -73,12 +87,13 @@ class Runner:
         variables: Optional[Dict[str, Any]] = None,
         report_path: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Run a scenario file."""
         scenario_path = os.path.abspath(scenario_path)
         scenario = self._load_yaml(scenario_path)
         self.validate(scenario)
 
         variables = variables or {}
-        variables = dict(variables)  # copy
+        variables = dict(variables)
         scenario_vars = scenario.get("vars", {}) or {}
         if isinstance(scenario_vars, dict):
             variables = {**scenario_vars, **variables}
@@ -103,8 +118,6 @@ class Runner:
         }
 
         try:
-            # open_app step can exist; if app_path provided explicitly, we use it.
-            # If scenario contains open_app, it will run. If not, and app_path is provided, we start immediately.
             resolver = Resolver(sess, self.repo)
             actions = Actions(resolver)
 
@@ -130,17 +143,24 @@ class Runner:
                 report["steps"].append(step_rec)
 
                 try:
+                    # Clear action context for each step
+                    ActionContextManager.clear()
+                    
                     self._execute(keyword, args, sess, actions)
                     step_rec["status"] = "passed"
                 except Exception as e:
                     step_rec["status"] = "failed"
                     step_rec["error"] = f"{type(e).__name__}: {e}"
+                    
+                    # Capture action context trace if available
+                    ctx = ActionContextManager.current()
+                    if ctx:
+                        step_rec["action_trace"] = ctx.format_trace()
+                    
                     raise
                 finally:
                     step_rec["duration_sec"] = round(time.time() - step_rec["started_at"], 3)
-                    # Remove raw timestamp if you don't want it in the report
                     step_rec.pop("started_at", None)
-
 
             report["status"] = "passed"
             return report
@@ -155,7 +175,11 @@ class Runner:
             return report
         finally:
             report["duration_sec"] = round(time.time() - start_ts, 3)
-            # best-effort close
+            
+            # Clear action context
+            ActionContextManager.clear()
+            
+            # Best-effort close
             try:
                 sess.close_main_windows(timeout=3.0)
             except Exception:
@@ -166,15 +190,14 @@ class Runner:
                 with open(report_path, "w", encoding="utf-8") as f:
                     json.dump(report, f, indent=2)
 
-    def _execute(self, keyword: str, args: Dict[str, Any], sess: Session, actions: Actions) -> None:
-        """
-        @brief Execute single scenario step.
-        @param keyword Step keyword
-        @param args Step arguments
-        @param sess Session instance
-        @param actions Actions instance
-        @throws ValueError if keyword unknown
-        """
+    def _execute(
+        self,
+        keyword: str,
+        args: Dict[str, Any],
+        sess: Session,
+        actions: Actions
+    ) -> None:
+        """Execute single scenario step."""
         if keyword == "open_app":
             path = args["path"]
             sess.start(path, wait_for_idle=bool(args.get("wait_for_idle", False)))
@@ -192,64 +215,151 @@ class Runner:
             actions.double_click(args["element"], overrides=args.get("overrides"))
             return
 
-        if keyword == "right_click": 
+        if keyword == "right_click":
             actions.right_click(args["element"], overrides=args.get("overrides"))
             return
 
         if keyword == "hover":
-            actions.hover(args["element"], overrides=args. get("overrides"))
+            actions.hover(args["element"], overrides=args.get("overrides"))
             return
 
         if keyword == "hotkey":
             actions.hotkey(args["keys"])
             return
 
-        if keyword == "type": 
-            actions.type(args["element"], text=args["text"], overrides=args.get("overrides"), clear=bool(args.get("clear", True)))
+        if keyword == "type":
+            actions.type(
+                args["element"],
+                text=args["text"],
+                overrides=args.get("overrides"),
+                clear=bool(args.get("clear", True))
+            )
+            return
+        
+        if keyword == "click_and_type":
+            actions.click_and_type(
+                args["element"],
+                text=args["text"],
+                clear=bool(args.get("clear", True)),
+                overrides=args.get("overrides")
+            )
             return
 
-        if keyword == "wait": 
-            actions.wait_for(args["element"], state=args. get("state", "visible"), timeout=args.get("timeout"), overrides=args.get("overrides"))
+        if keyword == "wait":
+            actions.wait_for(
+                args["element"],
+                state=args.get("state", "visible"),
+                timeout=args.get("timeout"),
+                overrides=args.get("overrides")
+            )
             return
 
-        if keyword == "assert": 
-            actions.assert_state(args["element"], state=args. get("state", "visible"), overrides=args.get("overrides"))
+        if keyword == "wait_for_gone":
+            actions.wait_for_gone(
+                args["element"],
+                timeout=args.get("timeout"),
+                overrides=args.get("overrides")
+            )
             return
 
-        if keyword == "assert_text_equals": 
-            actions.assert_text_equals(args["element"], expected=args["expected"], overrides=args.get("overrides"))
+        if keyword == "wait_for_any":
+            actions.wait_for_any(
+                args["elements"],
+                timeout=args.get("timeout"),
+                overrides=args.get("overrides")
+            )
+            return
+
+        if keyword == "assert":
+            actions.assert_state(
+                args["element"],
+                state=args.get("state", "visible"),
+                overrides=args.get("overrides")
+            )
+            return
+
+        if keyword == "assert_text_equals":
+            actions.assert_text_equals(
+                args["element"],
+                expected=args["expected"],
+                overrides=args.get("overrides")
+            )
             return
 
         if keyword == "assert_text_contains":
-            actions.assert_text_contains(args["element"], substring=args["substring"], overrides=args.get("overrides"))
+            actions.assert_text_contains(
+                args["element"],
+                substring=args["substring"],
+                overrides=args.get("overrides")
+            )
             return
 
         if keyword == "set_checkbox":
-            actions.set_checkbox(args["element"], checked=args["checked"], overrides=args. get("overrides"))
+            actions.set_checkbox(
+                args["element"],
+                checked=args["checked"],
+                overrides=args.get("overrides")
+            )
             return
 
         if keyword == "assert_checkbox_state":
-            actions. assert_checkbox_state(args["element"], checked=args["checked"], overrides=args.get("overrides"))
+            actions.assert_checkbox_state(
+                args["element"],
+                checked=args["checked"],
+                overrides=args.get("overrides")
+            )
             return
 
         if keyword == "select_combobox":
-            actions.select_combobox(args["element"], option=args["option"], by_index=bool(args.get("by_index", False)), overrides=args.get("overrides"))
+            actions.select_combobox(
+                args["element"],
+                option=args["option"],
+                by_index=bool(args.get("by_index", False)),
+                item_element=args.get("item_element"),  # NEW
+                overrides=args.get("overrides")
+            )
+            return
+        
+        if keyword == "select_combobox_item":
+            actions.select_combobox_item(
+                combobox_element=args["combobox"],
+                item_element=args["item"],
+                overrides=args.get("overrides")
+            )
             return
 
         if keyword == "select_list_item":
-            actions.select_list_item(args["element"], item_text=args. get("item_text"), item_index=args.get("item_index"), overrides=args.get("overrides"))
+            actions.select_list_item(
+                args["element"],
+                item_text=args.get("item_text"),
+                item_index=args.get("item_index"),
+                overrides=args.get("overrides")
+            )
             return
 
         if keyword == "assert_count":
-            actions.assert_count(args["element"], expected=args["expected"], overrides=args. get("overrides"))
+            actions.assert_count(
+                args["element"],
+                expected=args["expected"],
+                overrides=args.get("overrides")
+            )
             return
 
-        if keyword == "close_window": 
+        if keyword == "close_window":
             actions.close_window(args["window"])
             return
 
         if keyword == "kill_app":
             sess.kill()
+            return
+
+        # New v1.2.0 keywords
+        if keyword == "click_if_exists":
+            actions.click_if_exists(
+                args["element"],
+                timeout=args.get("timeout", 2.0),
+                overrides=args.get("overrides")
+            )
             return
 
         raise ValueError(f"Unknown keyword: {keyword}")

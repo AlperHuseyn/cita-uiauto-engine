@@ -125,9 +125,9 @@ class TestWaitUntilPasses:
         
         result = wait_until_passes(
             add,
-            2, 3,  # positional args
             timeout=5,
             description="addition",
+            a=2, b=3,  # positional args
             multiplier=2  # keyword arg
         )
         

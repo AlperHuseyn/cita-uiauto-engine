@@ -1,554 +1,311 @@
+# uiauto/element.py
 """
 @file element.py
-@brief Robust element wrapper with fallback strategies for UI automation. 
+@brief Element wrapper with wait and action capabilities.
 """
 
 from __future__ import annotations
-import time
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, List
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
-from . waits import wait_until
+from .waits import wait_until
+from .config import TimeConfig
+from .context import ActionContextManager
+
+if TYPE_CHECKING:
+    pass
 
 
 @dataclass
 class ElementMeta:
     """
-    @brief Metadata for resolved UI element.
+    Metadata about how an element was found.
+    Used for debugging and error reporting.
     """
     name: str
     window_name: str
-    used_locator: Dict[str, Any]
+    used_locator: Dict[str, Any] = field(default_factory=dict)
     found_via_name: bool = False
 
 
 class Element:
     """
-    @brief Robust wrapper around pywinauto element handle.
+    Element wrapper providing high-level operations on UI elements.
     
-    Provides framework-specific helpers and implements fallback strategies
-    for reliable cross-platform UI automation (Win32, WPF, UIA, QtQuick).
+    This class wraps a raw pywinauto element and provides:
+    - State queries (exists, is_visible, is_enabled)
+    - Wait operations
+    - Click, type, and other actions
+    - Rich metadata for debugging
     """
-
-    def __init__(self, handle, meta: ElementMeta, default_timeout: float, polling_interval: float):
+    
+    def __init__(
+        self,
+        handle: Any,
+        meta: Optional[ElementMeta] = None,
+        default_timeout: float = 10.0,
+        polling_interval: float = 0.2,
+    ):
         """
-        @brief Initialize element wrapper.
-        @param handle Pywinauto element wrapper (ButtonWrapper, EditWrapper, etc.)
-        @param meta Element metadata
-        @param default_timeout Default timeout for wait operations (seconds)
-        @param polling_interval Polling interval for wait operations (seconds)
+        @param handle Raw pywinauto element wrapper
+        @param meta Element metadata for debugging
+        @param default_timeout Default timeout for wait operations
+        @param polling_interval Polling interval for waits
         """
-        self. handle = handle
-        self.meta = meta
-        self.default_timeout = default_timeout
-        self.polling_interval = polling_interval
-
+        self._handle = handle
+        self._meta = meta or ElementMeta(name="unknown", window_name="unknown")
+        self._default_timeout = default_timeout
+        self._polling_interval = polling_interval
+    
+    @property
+    def handle(self) -> Any:
+        """Get the underlying pywinauto element."""
+        return self._handle
+    
+    @property
+    def meta(self) -> ElementMeta:
+        """Get element metadata."""
+        return self._meta
+    
+    @property
+    def name(self) -> str:
+        """Get element name."""
+        return self._meta.name
+    
+    @property
+    def window_name(self) -> str:
+        """Get parent window name."""
+        return self._meta.window_name
+    
+    # --- State Queries ---
+    
     def exists(self) -> bool:
-        """
-        @brief Check if element exists in UI tree.
-        @return True if element exists, False otherwise
-        @note For QtQuick elements found via name/name_re, always returns True
-        """
-        if self.meta.found_via_name:
-            return True
+        """Check if element exists in the UI tree."""
         try:
-            return bool(self.handle.exists())
+            if hasattr(self._handle, 'exists'):
+                return bool(self._handle.exists())
+            return True
         except Exception:
             return False
-
+    
     def is_visible(self) -> bool:
-        """
-        @brief Check if element is visible.
-        @return True if visible, False otherwise
-        @note Also checks for zero-size rectangles (effectively invisible)
-        """
+        """Check if element is visible."""
         try:
-            if not self.handle.is_visible():
-                return False
-            try:
-                rect = self.handle.rectangle()
-                if rect.width() == 0 or rect.height() == 0:
-                    return False
-            except Exception:
-                pass
+            if hasattr(self._handle, 'is_visible'):
+                return bool(self._handle.is_visible())
             return True
         except Exception:
             return False
-
+    
     def is_enabled(self) -> bool:
-        """
-        @brief Check if element is enabled.
-        @return True if enabled, False otherwise
-        @note For Edit controls, read-only state counts as disabled
-        """
-        try: 
-            if not self.handle.is_enabled():
-                return False
-            try:
-                ctrl_type = self.handle.element_info.control_type
-                if ctrl_type == "Edit": 
-                    if hasattr(self.handle, 'is_read_only') and self.handle.is_read_only():
-                        return False
-            except Exception:
-                pass
+        """Check if element is enabled."""
+        try:
+            if hasattr(self._handle, 'is_enabled'):
+                return bool(self._handle.is_enabled())
             return True
-        except Exception: 
+        except Exception:
             return False
-
-    def wait(self, state: str = "exists", timeout: Optional[float] = None) -> "Element":
+    
+    # --- Wait Operations ---
+    
+    def wait(self, state: str = "exists", timeout: Optional[float] = None) -> Element:
         """
-        @brief Wait for element to reach specified state.
-        @param state State to wait for:  "exists", "visible", "enabled"
-        @param timeout Timeout in seconds (uses default_timeout if None)
-        @return Self for chaining
-        @throws TimeoutError if state not reached within timeout
+        Wait for element to reach a specific state.
+        
+        @param state One of: "exists", "visible", "enabled"
+        @param timeout Override timeout
+        @return self for chaining
         """
-        timeout = self.default_timeout if timeout is None else float(timeout)
-
-        def pred():
-            if state == "exists":
-                return self.exists()
-            if state == "visible":
-                return self.exists() and self.is_visible()
-            if state == "enabled": 
-                return self.exists() and self.is_visible() and self.is_enabled()
-            raise ValueError(f"Unknown wait state: {state}")
-
-        wait_until(pred, timeout=timeout, interval=self.polling_interval,
-                   description=f"{self.meta.name} to be {state}")
+        effective_timeout = timeout if timeout is not None else self._default_timeout
+        
+        if state == "exists":
+            wait_until(
+                self.exists,
+                timeout=effective_timeout,
+                interval=self._polling_interval,
+                description=f"element '{self._meta.name}' to exist"
+            )
+        elif state == "visible":
+            wait_until(
+                lambda: self.exists() and self.is_visible(),
+                timeout=effective_timeout,
+                interval=self._polling_interval,
+                description=f"element '{self._meta.name}' to be visible"
+            )
+        elif state == "enabled":
+            wait_until(
+                lambda: self.exists() and self.is_visible() and self.is_enabled(),
+                timeout=effective_timeout,
+                interval=self._polling_interval,
+                description=f"element '{self._meta.name}' to be enabled"
+            )
+        else:
+            raise ValueError(f"Unknown state: {state}. Use 'exists', 'visible', or 'enabled'")
+        
         return self
-
-    def click(self, ensure_visible: bool = True, retry_count: int = 2) -> None:
-        """
-        @brief Robust click with automatic scroll and retry.
-        @param ensure_visible Scroll into view if not visible
-        @param retry_count Number of retry attempts on failure
-        @throws RuntimeError if click fails after all retries
-        """
-        for attempt in range(retry_count):
-            try:
-                if ensure_visible and not self.is_visible():
-                    self.scroll_into_view()
-                self.handle.click_input()
-                return
-            except Exception as e:
-                if attempt == retry_count - 1:
-                    raise RuntimeError(f"Click failed on {self.meta.name}: {e}")
-                time.sleep(0.2)
-
-    def double_click(self, ensure_visible: bool = True) -> None:
-        """
-        @brief Robust double-click with fallback.
-        @param ensure_visible Scroll into view if not visible
-        @throws RuntimeError if double-click fails
-        """
-        if ensure_visible and not self.is_visible():
-            self.scroll_into_view()
-
-        try:
-            self.handle.double_click_input()
-            return
-        except Exception: 
-            pass
-
-        try:
-            self. handle.click_input()
-            time.sleep(0.05)
-            self.handle.click_input()
-        except Exception as e:
-            raise RuntimeError(f"Double-click failed on {self.meta.name}: {e}")
-
-    def right_click(self, ensure_visible: bool = True) -> None:
-        """
-        @brief Robust right-click with fallback.
-        @param ensure_visible Scroll into view if not visible
-        @throws RuntimeError if right-click fails
-        """
-        if ensure_visible and not self.is_visible():
-            self.scroll_into_view()
-
-        try:
-            self.handle.right_click_input()
-            return
-        except Exception:
-            pass
-
-        try: 
-            self.handle.click_input(button='right')
-        except Exception as e:
-            raise RuntimeError(f"Right-click failed on {self.meta.name}: {e}")
-
-    def hover(self) -> None:
-        """
-        @brief Move mouse cursor over element center.
-        @throws RuntimeError if hover fails
-        """
-        try:
-            rect = self.handle.rectangle()
-            center_x = (rect.left + rect.right) // 2
-            center_y = (rect.top + rect.bottom) // 2
-
-            from pywinauto import mouse
-            mouse.move(coords=(center_x, center_y))
-        except Exception as e: 
-            raise RuntimeError(f"Hover failed on {self.meta.name}: {e}")
-
-    def set_text(self, text: str, clear_first: bool = False) -> None:
-        """
-        @brief Robust text setting with multiple fallback strategies.
-        @param text Text to set
-        @param clear_first Clear existing text before setting
-        @throws RuntimeError if all strategies fail
-        """
-        if clear_first:
-            try:
-                self.clear()
-            except Exception:
-                pass
-
-        try:
-            self.handle.set_edit_text(text)
-            return
-        except Exception:
-            pass
-
-        try:
-            self.handle.set_text(text)
-            return
-        except Exception: 
-            pass
-
-        try: 
-            self.focus()
-            self.handle.type_keys(text, with_spaces=True, set_foreground=True)
-            return
-        except Exception as e:
-            raise RuntimeError(f"Set text failed on {self.meta. name}: {e}")
-
-    def type_keys(self, keys: str, with_spaces: bool = True, pause: float = 0.05) -> None:
-        """
-        @brief Robust keyboard input with focus handling.
-        @param keys Keys to send (pywinauto format)
-        @param with_spaces Allow spaces in key sequences
-        @param pause Pause between keystrokes (seconds)
-        @throws RuntimeError if typing fails
-        """
-        try: 
-            self.focus()
-        except Exception:
-            pass
-
-        try:
-            self.handle. type_keys(keys, with_spaces=with_spaces, set_foreground=True, pause=pause)
-            return
-        except Exception: 
-            pass
-
-        try: 
-            from pywinauto.keyboard import send_keys
-            self.focus()
-            send_keys(keys, pause=pause)
-        except Exception as e:
-            raise RuntimeError(f"Type keys failed on {self.meta.name}:  {e}")
-
-    def focus(self) -> None:
-        """
-        @brief Robust focus setting with multiple strategies.
-        @throws RuntimeError if all focus strategies fail
-        """
-        try:
-            self.handle.set_focus()
-            return
-        except Exception:
-            pass
-
-        try:
-            self.handle. click_input()
-            return
-        except Exception:
-            pass
-
-        try:
-            parent = self.handle.parent()
-            parent.set_focus()
-            self.handle.set_focus()
-        except Exception as e:
-            raise RuntimeError(f"Focus failed on {self.meta.name}: {e}")
-
-    def clear(self) -> None:
-        """
-        @brief Clear text from control with multiple strategies.
-        @throws RuntimeError if all clear strategies fail
-        """
-        try:
-            self.focus()
-            self.handle.type_keys("^a{DELETE}")
-            return
-        except Exception: 
-            pass
-
-        try: 
-            self.handle.set_edit_text("")
-            return
-        except Exception:
-            pass
-
-        try:
-            self. handle.set_text("")
-        except Exception as e:
-            raise RuntimeError(f"Clear failed on {self. meta.name}: {e}")
-
+    
+    def wait_until_visible(self, timeout: Optional[float] = None) -> Element:
+        """Wait for element to become visible."""
+        return self.wait("visible", timeout)
+    
+    def wait_until_enabled(self, timeout: Optional[float] = None) -> Element:
+        """Wait for element to become enabled."""
+        return self.wait("enabled", timeout)
+    
+    def wait_until_gone(self, timeout: Optional[float] = None) -> None:
+        """Wait for element to disappear."""
+        from .waits import wait_until_not
+        
+        config = TimeConfig.current().disappear_wait
+        effective_timeout = timeout if timeout is not None else config.timeout
+        
+        wait_until_not(
+            self.exists,
+            timeout=effective_timeout,
+            interval=config.interval,
+            description=f"element '{self._meta.name}' to disappear"
+        )
+    
+    # --- Actions ---
+    
+    def click(self) -> Element:
+        """Click the element."""
+        with ActionContextManager.action("click", element_name=self._meta.name):
+            if hasattr(self._handle, 'click_input'):
+                self._handle.click_input()
+            elif hasattr(self._handle, 'click'):
+                self._handle.click()
+        return self
+    
+    def double_click(self) -> Element:
+        """Double-click the element."""
+        with ActionContextManager.action("double_click", element_name=self._meta.name):
+            if hasattr(self._handle, 'double_click_input'):
+                self._handle.double_click_input()
+            elif hasattr(self._handle, 'double_click'):
+                self._handle.double_click()
+            else:
+                self._handle.click_input()
+                import time
+                time.sleep(0.05)
+                self._handle.click_input()
+        return self
+    
+    def right_click(self) -> Element:
+        """Right-click the element."""
+        with ActionContextManager.action("right_click", element_name=self._meta.name):
+            if hasattr(self._handle, 'right_click_input'):
+                self._handle.right_click_input()
+            elif hasattr(self._handle, 'click_input'):
+                self._handle.click_input(button='right')
+        return self
+    
+    def hover(self) -> Element:
+        """Hover over the element."""
+        with ActionContextManager.action("hover", element_name=self._meta.name):
+            if hasattr(self._handle, 'move_mouse_input'):
+                self._handle.move_mouse_input()
+            elif hasattr(self._handle, 'set_focus'):
+                self._handle.set_focus()
+        return self
+    
+    def set_text(self, text: str, clear_first: bool = True) -> Element:
+        """Type text into the element."""
+        with ActionContextManager.action("set_text", element_name=self._meta.name):
+            if hasattr(self._handle, 'set_edit_text'):
+                self._handle.set_edit_text(text)
+            elif hasattr(self._handle, 'type_keys'):
+                if clear_first:
+                    self._handle.type_keys('^a{DELETE}', with_spaces=True)
+                self._handle.type_keys(text, with_spaces=True, with_tabs=True)
+        return self
+    
     def get_text(self) -> str:
-        """
-        @brief Robust text retrieval with multiple strategies.
-        @return Element text or empty string if retrieval fails
-        """
-        try:
-            texts = self.handle.texts()
-            if texts:
-                return texts[0]
-        except Exception:
-            pass
-
-        try:
-            return self.handle.window_text()
-        except Exception: 
-            pass
-
-        try: 
-            return self.handle.get_value()
-        except Exception:
-            pass
-
+        """Get the text content of the element."""
+        if hasattr(self._handle, 'window_text'):
+            return self._handle.window_text() or ""
+        elif hasattr(self._handle, 'texts'):
+            texts = self._handle.texts()
+            return texts[0] if texts else ""
+        elif hasattr(self._handle, 'get_value'):
+            return str(self._handle.get_value() or "")
         return ""
-
-    def scroll_into_view(self) -> None:
-        """
-        @brief Scroll element into viewport if supported.
-        @note Best-effort operation, silently fails if not supported
-        """
-        try: 
-            self.handle.scroll_into_view()
-        except Exception: 
-            pass
-
-    def check(self) -> None:
-        """
-        @brief Ensure checkbox is checked (idempotent).
-        @note Works with UIA TogglePattern, Win32 checkboxes, and click fallback
-        """
-        try: 
-            current_state = self.handle.get_toggle_state()
-            if current_state != 1:
-                self.handle.toggle()
-            return
-        except AttributeError:
-            pass
-
-        try:
-            self.handle. check()
-            return
-        except AttributeError:
-            pass
-
-        try:
-            current = self.handle.get_check_state()
-            if current != 1:
-                self.click()
-            return
-        except Exception:
-            pass
-
-        self.click()
-
-    def uncheck(self) -> None:
-        """
-        @brief Ensure checkbox is unchecked (idempotent).
-        @note Works with UIA TogglePattern, Win32 checkboxes, and click fallback
-        """
-        try:
-            current_state = self.handle.get_toggle_state()
-            if current_state != 0:
-                self. handle.toggle()
-            return
-        except AttributeError:
-            pass
-
-        try:
-            self.handle.uncheck()
-            return
-        except AttributeError: 
-            pass
-
-        try: 
-            current = self.handle.get_check_state()
-            if current != 0:
-                self.click()
-            return
-        except Exception:
-            pass
-
-        self.click()
-
-    def toggle(self) -> None:
-        """
-        @brief Toggle checkbox state.
-        """
-        try:
-            self. handle.toggle()
-        except AttributeError:
-            self.click()
-
+    
+    def check(self) -> Element:
+        """Check a checkbox element."""
+        with ActionContextManager.action("check", element_name=self._meta.name):
+            if hasattr(self._handle, 'check'):
+                self._handle.check()
+            elif hasattr(self._handle, 'toggle'):
+                state = self._handle.get_toggle_state()
+                if state != 1:
+                    self._handle.toggle()
+            else:
+                self._handle.click_input()
+        return self
+    
+    def uncheck(self) -> Element:
+        """Uncheck a checkbox element."""
+        with ActionContextManager.action("uncheck", element_name=self._meta.name):
+            if hasattr(self._handle, 'uncheck'):
+                self._handle.uncheck()
+            elif hasattr(self._handle, 'toggle'):
+                state = self._handle.get_toggle_state()
+                if state == 1:
+                    self._handle.toggle()
+            else:
+                if self.get_state() == "checked":
+                    self._handle.click_input()
+        return self
+    
     def get_state(self) -> str:
-        """
-        @brief Get checkbox state.
-        @return "checked", "unchecked", "indeterminate", or "unknown"
-        """
+        """Get the toggle state of a checkbox."""
         try:
-            state = self.handle.get_toggle_state()
-            return {0: "unchecked", 1: "checked", 2: "indeterminate"}.get(state, "unknown")
-        except AttributeError: 
-            pass
-
-        try:
-            state = self.handle.get_check_state()
-            return {0: "unchecked", 1: "checked", 2: "indeterminate"}.get(state, "unknown")
+            if hasattr(self._handle, 'get_toggle_state'):
+                state = self._handle.get_toggle_state()
+                if state == 1:
+                    return "checked"
+                elif state == 0:
+                    return "unchecked"
+                else:
+                    return "indeterminate"
+            return "unknown"
         except Exception:
             return "unknown"
-
-    def select(self, option, by_index:  bool = False) -> None:
-        """
-        @brief Robust selection for ComboBox/ListBox with multiple strategies.
-        @param option Option text or index to select
-        @param by_index True to select by index, False to select by text
-        @throws RuntimeError if all selection strategies fail
-        """
-        try:
+    
+    def select(self, option: Any, by_index: bool = False) -> Element:
+        """Select an option in a combobox."""
+        with ActionContextManager.action("select", element_name=self._meta.name):
             if by_index:
-                self. handle.select(int(option))
+                if hasattr(self._handle, 'select'):
+                    self._handle.select(int(option))
             else:
-                self.handle.select(option)
-            return
-        except Exception:
-            pass
-
-        try:
-            self.handle.expand()
-            time.sleep(0.2)
-            items = self.handle.descendants(control_type="ListItem")
-            for item in items:
-                try:
-                    if str(option) in item.window_text():
-                        item.click_input()
-                        return
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        try:
-            self.focus()
-            self.clear()
-            self.type_keys(str(option))
-            self.type_keys("{ENTER}")
-            return
-        except Exception: 
-            pass
-
-        raise RuntimeError(f"Select failed on {self.meta.name} for option '{option}'")
-
-    def expand(self) -> None:
-        """
-        @brief Expand ComboBox dropdown. 
-        """
-        try:
-            self. handle.expand()
-        except AttributeError:
-            self.click()
-
-    def collapse(self) -> None:
-        """
-        @brief Collapse ComboBox dropdown.
-        """
-        try:
-            self.handle. collapse()
-        except AttributeError:
-            self.type_keys("{ESC}")
-
-    def item_texts(self) -> List[str]:
-        """
-        @brief Get all item texts from ComboBox/ListBox.
-        @return List of item texts
-        """
-        try:
-            return self.handle.item_texts()
-        except Exception:
-            pass
-
-        try: 
-            items = self.handle.descendants(control_type="ListItem")
-            return [item.window_text() for item in items]
-        except Exception:
-            return []
-
-    def select_item(self, item_text: str = None, item_index: int = None) -> None:
-        """
-        @brief Robust item selection for ListBox/ListView.
-        @param item_text Item text to select
-        @param item_index Item index to select
-        @throws RuntimeError if selection fails
-        """
-        if item_index is not None:
-            try:
-                self.handle.select(item_index)
-                return
-            except Exception:
-                pass
-
-        if item_text is not None: 
-            try:
-                self.handle.select(item_text)
-                return
-            except Exception:
-                pass
-
-        if item_text is not None:
-            try:
-                items = self.handle.descendants(control_type="ListItem")
-                for item in items:
-                    if item_text in item.window_text():
-                        item.click_input()
-                        return
-            except Exception:
-                pass
-
-        raise RuntimeError(f"Select item failed on {self.meta.name}")
-
+                if hasattr(self._handle, 'select'):
+                    self._handle.select(str(option))
+        return self
+    
+    def select_item(
+        self,
+        item_text: Optional[str] = None,
+        item_index: Optional[int] = None
+    ) -> Element:
+        """Select an item in a list."""
+        with ActionContextManager.action("select_item", element_name=self._meta.name):
+            if item_text is not None:
+                if hasattr(self._handle, 'select'):
+                    self._handle.select(item_text)
+            elif item_index is not None:
+                if hasattr(self._handle, 'select'):
+                    self._handle.select(item_index)
+        return self
+    
     def item_count(self) -> int:
-        """
-        @brief Get item count in list/combobox.
-        @return Number of items
-        """
+        """Get the number of items in a list/combobox."""
         try:
-            return self.handle. item_count()
-        except Exception:
-            pass
-
-        try: 
-            items = self.handle.descendants(control_type="ListItem")
-            return len(items)
+            if hasattr(self._handle, 'item_count'):
+                return self._handle.item_count()
+            elif hasattr(self._handle, 'items'):
+                return len(self._handle.items() or [])
+            return 0
         except Exception:
             return 0
-
-    def __getattr__(self, name: str):
-        """
-        @brief Delegate unknown methods to pywinauto handle.
-        @param name Method name
-        @return Method from handle
-        @throws AttributeError if method not found
-        """
-        if hasattr(self.handle, name):
-            return getattr(self. handle, name)
-        raise AttributeError(
-            f"'{type(self).__name__}' and its handle have no attribute '{name}'"
-        )

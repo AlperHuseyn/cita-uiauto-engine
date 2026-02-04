@@ -84,6 +84,17 @@
               "overrides": { "type": "object" }
             }
           },
+          "click_and_type": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element", "text"],
+            "properties": {
+              "element": { "type": "string" },
+              "text": { "type": "string" },
+              "clear": { "type": "boolean" },
+              "overrides": { "type": "object" }
+            }
+          },
           "wait": {
             "type": "object",
             "additionalProperties": false,
@@ -93,6 +104,30 @@
               "state": {
                 "type": "string",
                 "enum": ["exists", "visible", "enabled"]
+              },
+              "timeout": { "type": "number" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "wait_for_gone": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": { "type": "string" },
+              "timeout": { "type": "number" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "wait_for_any": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["elements"],
+            "properties": {
+              "elements": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1
               },
               "timeout": { "type": "number" },
               "overrides": { "type": "object" }
@@ -159,6 +194,17 @@
               "element": { "type": "string" },
               "option": { "type": "string" },
               "by_index": { "type": "boolean" },
+              "item_element": { "type": "string" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "select_combobox_item": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["combobox", "item"],
+            "properties": {
+              "combobox": { "type": "string" },
+              "item": { "type": "string" },
               "overrides": { "type": "object" }
             }
           },
@@ -195,6 +241,26 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {}
+          },
+          "click_if_exists": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": { "type": "string" },
+              "timeout": { "type": "number" },
+              "overrides": { "type": "object" }
+            }
+          },
+          "get_text": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["element"],
+            "properties": {
+              "element": { "type": "string" },
+              "store_as": { "type": "string" },
+              "overrides": { "type": "object" }
+            }
           }
         }
       }
