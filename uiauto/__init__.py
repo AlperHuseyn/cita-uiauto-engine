@@ -1,6 +1,6 @@
 # uiauto/__init__.py
 """
-cita-uiauto-engine - Production-ready Windows UI automation framework.
+cita-uiauto-engine - Windows UI automation framework.
 
 Quick Start:
     from uiauto import Repository, Session, Resolver, Actions

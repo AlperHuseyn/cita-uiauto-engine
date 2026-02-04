@@ -1,0 +1,12 @@
+# UI Dependencies
+PySide6>=6.5.0
+
+# Core dependencies (already in project)
+# pywinauto>=0.6.8
+# pyyaml>=6.0
+# jsonschema>=4.0
+# pillow>=9.0
+
+# Optional for recording
+# pynput>=1.7.0
+# comtypes>=1.1.0
