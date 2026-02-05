@@ -138,6 +138,8 @@ class MainWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
+
+        check_qdarktheme()
         
         logger.info("Initializing MainWindow")
         
