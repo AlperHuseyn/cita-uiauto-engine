@@ -159,7 +159,8 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         """Build the main window UI."""
         self.setWindowTitle("cita-uiauto-engine")
-        self.setMinimumSize(1100, 700)
+        self.resize(1500, 900)           # default opening size
+        self.setMinimumSize(1100, 800)   # optional: prevent too small
         
         # Central widget
         central = QWidget()
@@ -277,11 +278,6 @@ class MainWindow(QMainWindow):
     
     def _restore_state(self) -> None:
         """Restore window state from settings."""
-        # Window geometry
-        geometry = self._settings_service.load_window_geometry()
-        if geometry:
-            self.restoreGeometry(geometry)
-        
         # Splitter state
         splitter_state = self._settings_service.load_splitter_state()
         if splitter_state:
@@ -307,7 +303,6 @@ class MainWindow(QMainWindow):
     
     def _save_state(self) -> None:
         """Save window state to settings."""
-        self._settings_service.save_window_geometry(self.saveGeometry())
         self._settings_service.save_splitter_state(self._splitter.saveState())
         self._settings_service.save_last_tab(self._tabs.currentIndex())
         
