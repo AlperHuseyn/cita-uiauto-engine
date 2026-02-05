@@ -1,4 +1,3 @@
-# uiauto_ui/app.py
 """
 Main application entry point for cita-uiauto-engine GUI.
 
@@ -9,29 +8,119 @@ This module contains ONLY:
 - NO business logic
 
 All business logic is delegated to services and forms.
+
+Theme:
+    Install: pip install pyqtdarktheme
+    Uses qdarktheme for modern dark/light themes.
+    Falls back to Fusion style if not installed.
 """
 
 import sys
 from typing import Optional
 
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTabWidget, QSplitter, QMessageBox
-)
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import (QApplication, QComboBox, QHBoxLayout, QLabel,
+                               QMainWindow, QMessageBox, QSplitter, QTabWidget,
+                               QVBoxLayout, QWidget)
 
-from .forms import RunForm, InspectForm, RecordForm
-from .widgets.output_viewer import OutputViewer
-from .widgets.status_bar import StatusBar
+from .forms import InspectForm, RecordForm, RunForm
+from .models.command_result import CommandResult
 from .services.execution_service import ExecutionService
 from .services.settings_service import SettingsService
-from .models.command_result import CommandResult
-from .status_mapping import StatusInfo, STATUS_READY, STATUS_RECORDING
-from .utils.logging import setup_logging, get_logger
+from .status_mapping import STATUS_READY, STATUS_RECORDING, StatusInfo
+from .utils.logging import get_logger, setup_logging
+from .widgets.output_viewer import OutputViewer
+from .widgets.status_bar import StatusBar
 
 # Initialize logging before anything else
 setup_logging()
 logger = get_logger(__name__)
+
+
+# =============================================================================
+# Theme Support
+# =============================================================================
+
+# Global flag to track if qdarktheme is available
+_qdarktheme_available: bool = False
+
+def check_qdarktheme() -> bool:
+    """Check if qdarktheme is available and has a supported API."""
+    global _qdarktheme_available
+    try:
+        import qdarktheme  # noqa: F401
+
+        # Support both new and old PyQtDarkTheme APIs
+        _qdarktheme_available = (
+            hasattr(qdarktheme, "setup_theme") or hasattr(qdarktheme, "load_stylesheet")
+        )
+
+        if not _qdarktheme_available:
+            logger.warning(
+                "qdarktheme imported but no supported API found "
+                "(expected setup_theme or load_stylesheet)."
+            )
+
+        return _qdarktheme_available
+
+    except ImportError:
+        _qdarktheme_available = False
+        logger.warning("qdarktheme not installed. Install with: pip install -U pyqtdarktheme")
+        return False
+
+
+def _resolve_theme(theme: str) -> str:
+    """Map 'auto' to 'dark'/'light' best-effort."""
+    if theme != "auto":
+        return theme
+
+    try:
+        hints = QGuiApplication.styleHints()
+        scheme = hints.colorScheme()
+        return "dark" if scheme == Qt.ColorScheme.Dark else "light"
+    except Exception:
+        return "dark"
+
+
+def apply_theme(theme: str = "dark") -> bool:
+    """
+    Apply PyQtDarkTheme to the application.
+
+    Works with:
+    - New API: qdarktheme.setup_theme(...)
+    - Old API: app.setStyleSheet(qdarktheme.load_stylesheet(...))
+    """
+    global _qdarktheme_available
+
+    if not _qdarktheme_available:
+        return False
+
+    try:
+        import qdarktheme
+        app = QApplication.instance()
+        if app is None:
+            return False
+
+        t = _resolve_theme(theme)
+
+        # Newer API
+        if hasattr(qdarktheme, "setup_theme"):
+            qdarktheme.setup_theme(t)
+            logger.info(f"Applied qdarktheme via setup_theme: {t}")
+            return True
+
+        # Older API (your current 0.1.7)
+        if hasattr(qdarktheme, "load_stylesheet"):
+            app.setStyleSheet(qdarktheme.load_stylesheet(t))
+            logger.info(f"Applied qdarktheme via load_stylesheet: {t}")
+            return True
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Failed to apply theme: {e}")
+        return False
 
 
 class MainWindow(QMainWindow):
@@ -78,6 +167,9 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.setSpacing(5)
         
+        # ---------------------------------------------------------------------
+        # Main Content: Splitter
+        # ---------------------------------------------------------------------
         # Horizontal splitter: Left = Forms, Right = Output
         self._splitter = QSplitter(Qt.Horizontal)
         
@@ -103,9 +195,44 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self._tabs)
         self._splitter.addWidget(left_widget)
         
-        # RIGHT: Output viewer
+        # RIGHT: Output viewer + theme (bottom-right, under Copy/Clear area)
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+
+        # Output viewer (expands)
         self._output_viewer = OutputViewer()
-        self._splitter.addWidget(self._output_viewer)
+        right_layout.addWidget(self._output_viewer, 1)
+
+        # Theme bar (sticks to bottom-right)
+        theme_bar = QWidget()
+        theme_layout = QHBoxLayout(theme_bar)
+        theme_layout.setContentsMargins(0, 0, 0, 0)
+        theme_layout.setSpacing(8)
+
+        theme_layout.addStretch()  # push to right
+
+        theme_label = QLabel("Theme:")
+        theme_layout.addWidget(theme_label)
+
+        self._theme_combo = QComboBox()
+        self._theme_combo.setMinimumWidth(140)
+        self._theme_combo.addItem("Dark", "dark")
+        self._theme_combo.addItem("Light", "light")
+        self._theme_combo.addItem("Auto (System)", "auto")
+
+        if not _qdarktheme_available:
+            self._theme_combo.setEnabled(False)
+            self._theme_combo.setToolTip("Install pyqtdarktheme for theme support")
+        else:
+            self._theme_combo.setToolTip("Select application theme")
+
+        theme_layout.addWidget(self._theme_combo)
+
+        right_layout.addWidget(theme_bar, 0)
+
+        self._splitter.addWidget(right_container)
         
         # Splitter sizing
         self._splitter.setSizes([450, 650])
@@ -120,6 +247,9 @@ class MainWindow(QMainWindow):
     
     def _connect_signals(self) -> None:
         """Connect signals between components."""
+        
+        # Theme selector
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         
         # Form command signals -> execution service
         self._run_form.command_requested.connect(self._on_command_requested)
@@ -160,6 +290,16 @@ class MainWindow(QMainWindow):
         if 0 <= last_tab < self._tabs.count():
             self._tabs.setCurrentIndex(last_tab)
         
+        # Theme preference - restore WITHOUT triggering change signal
+        saved_theme = self._settings_service.load_theme()
+
+        index = self._theme_combo.findData(saved_theme)
+        if index >= 0:
+            # Block signals to prevent _on_theme_changed from firing
+            self._theme_combo.blockSignals(True)
+            self._theme_combo.setCurrentIndex(index)
+            self._theme_combo.blockSignals(False)
+        
         # Load last used paths into forms
         self._run_form.load_last_paths(self._settings_service)
     
@@ -169,12 +309,27 @@ class MainWindow(QMainWindow):
         self._settings_service.save_splitter_state(self._splitter.saveState())
         self._settings_service.save_last_tab(self._tabs.currentIndex())
         
+        # Save theme preference
+        current_theme = self._theme_combo.currentData()
+        if current_theme:
+            self._settings_service.save_theme(current_theme)
+        
         # Save last used paths
         self._run_form.save_last_paths(self._settings_service)
     
     # -------------------------------------------------------------------------
     # Signal Handlers
     # -------------------------------------------------------------------------
+    
+    def _on_theme_changed(self, index: int) -> None:
+        """Handle theme selection change."""
+        theme = self._theme_combo.currentData()
+        if theme:
+            logger.info(f"User selected theme: {theme}")
+            if apply_theme(theme):
+                # Save preference immediately
+                self._settings_service.save_theme(theme)
+
     
     def _on_command_requested(self, argv: list) -> None:
         """Handle run/inspect command request from forms."""
@@ -310,7 +465,6 @@ def main() -> int:
     
     # Create application
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
     
     # Application metadata
     app.setApplicationName("cita-uiauto-engine")
@@ -318,6 +472,18 @@ def main() -> int:
     app.setOrganizationName("cita")
     app.setOrganizationDomain("cita.io")
     
+    # =========================================================================
+    # Apply Theme
+    # =========================================================================
+    # Check if qdarktheme is available first
+    has_qdarktheme = check_qdarktheme()
+    
+    if has_qdarktheme:
+        saved_theme = SettingsService().load_theme()
+        apply_theme(saved_theme)
+    else:
+        app.setStyle("Fusion")
+
     # Create and show main window
     window = MainWindow()
     window.show()

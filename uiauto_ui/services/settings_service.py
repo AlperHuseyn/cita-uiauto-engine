@@ -209,7 +209,8 @@ class SettingsService:
         self._settings.setValue(self.KEY_THEME, theme)
     
     def load_theme(self) -> str:
-        return str(self._settings.value(self.KEY_THEME, "fusion"))
+        return str(self._settings.value(self.KEY_THEME, "dark"))
+
     
     # -------------------------------------------------------------------------
     # Utilities
