@@ -1,0 +1,149 @@
+{
+  "scenario": "qtQuickTaskApp.yaml",
+  "started_at": "2026-02-05 18:39:42",
+  "status": "passed",
+  "steps": [
+    {
+      "index": 1,
+      "keyword": "open_app",
+      "args": {
+        "path": "C:\\Users\\alper\\source\\repos\\QtQuickTaskApp-oltan\\out\\Debug\\QtQuickTaskApp.exe"
+      },
+      "status": "passed",
+      "duration_sec": 0.002
+    },
+    {
+      "index": 2,
+      "keyword": "click",
+      "args": {
+        "element": "usernamefield"
+      },
+      "status": "passed",
+      "duration_sec": 0.955
+    },
+    {
+      "index": 3,
+      "keyword": "type",
+      "args": {
+        "element": "usernamefield",
+        "text": "AlperHuseyn"
+      },
+      "status": "passed",
+      "duration_sec": 0.005
+    },
+    {
+      "index": 4,
+      "keyword": "select_combobox_item",
+      "args": {
+        "combobox": "rolecombobox",
+        "item": "guest"
+      },
+      "status": "passed",
+      "duration_sec": 1.131
+    },
+    {
+      "index": 5,
+      "keyword": "click",
+      "args": {
+        "element": "loginbutton"
+      },
+      "status": "passed",
+      "duration_sec": 0.537
+    },
+    {
+      "index": 6,
+      "keyword": "wait",
+      "args": {
+        "element": "taskinput",
+        "state": "visible"
+      },
+      "status": "passed",
+      "duration_sec": 0.43
+    },
+    {
+      "index": 7,
+      "keyword": "type",
+      "args": {
+        "element": "taskinput",
+        "text": "AHD"
+      },
+      "status": "passed",
+      "duration_sec": 0.006
+    },
+    {
+      "index": 8,
+      "keyword": "click",
+      "args": {
+        "element": "addtaskbutton"
+      },
+      "status": "passed",
+      "duration_sec": 0.363
+    },
+    {
+      "index": 9,
+      "keyword": "click",
+      "args": {
+        "element": "taskcheckbox_0"
+      },
+      "status": "passed",
+      "duration_sec": 0.522
+    },
+    {
+      "index": 10,
+      "keyword": "wait",
+      "args": {
+        "element": "removetaskbutton_0",
+        "state": "visible"
+      },
+      "status": "passed",
+      "duration_sec": 0.212
+    },
+    {
+      "index": 11,
+      "keyword": "click",
+      "args": {
+        "element": "removetaskbutton_0"
+      },
+      "status": "passed",
+      "duration_sec": 0.376
+    },
+    {
+      "index": 12,
+      "keyword": "click",
+      "args": {
+        "element": "clearcompletedbutton"
+      },
+      "status": "passed",
+      "duration_sec": 0.53
+    },
+    {
+      "index": 13,
+      "keyword": "click",
+      "args": {
+        "element": "file"
+      },
+      "status": "passed",
+      "duration_sec": 0.542
+    },
+    {
+      "index": 14,
+      "keyword": "click",
+      "args": {
+        "element": "logout_ctrl_l"
+      },
+      "status": "passed",
+      "duration_sec": 0.541
+    },
+    {
+      "index": 15,
+      "keyword": "hotkey",
+      "args": {
+        "keys": "^\u0011"
+      },
+      "status": "passed",
+      "duration_sec": 0.159
+    }
+  ],
+  "errors": [],
+  "duration_sec": 6.311
+}

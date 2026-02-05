@@ -1,6 +1,21 @@
 # uiauto_ui/__init__.py
-"""Desktop UI for cita-uiauto-engine."""
+"""
+cita-uiauto-engine Desktop UI
 
-from .app import main, MainWindow
+A professional PySide6-based GUI for the cita-uiauto-engine CLI tool.
+Provides forms for run, inspect, and record commands with live output display.
 
-__all__ = ["main", "MainWindow"]
+Usage:
+    python -m uiauto_ui
+    
+Or programmatically:
+    from uiauto_ui import main
+    main()
+"""
+
+__version__ = "1.2.0"
+__author__ = "cita"
+
+from .app import main
+
+__all__ = ["main", "__version__"]
