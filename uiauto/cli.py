@@ -10,18 +10,16 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .config import (TimeConfig, TimeoutSettings, configure_for_ci,
+                     configure_for_local_dev)
+from .context import ActionContextManager
+from .inspector import (emit_elements_yaml_stateful, inspect_window,
+                        write_inspect_outputs)
 from .repository import Repository
 from .runner import Runner
-from .config import TimeConfig, TimeoutSettings, configure_for_ci, configure_for_local_dev
-from .context import ActionContextManager
-
-from .inspector import (
-    inspect_window,
-    write_inspect_outputs,
-    emit_elements_yaml_stateful,
-)
 
 # Import recorder conditionally to avoid hard dependency on optional packages
 try:
@@ -53,7 +51,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     argv = argv or sys.argv[1:]
     p = argparse.ArgumentParser(
         prog="uiauto",
-        description="cita-uiauto-engine - Production-ready Windows UI automation framework"
+        description="cita-uiauto-engine - Windows UI automation framework"
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -62,7 +60,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     # -------------------------
     runp = sub.add_parser("run", help="Run a YAML scenario using an elements.yaml object map")
     runp.add_argument("--elements", "-e", required=True, help="Path to elements.yaml (object map)")
-    runp.add_argument("--scenario", "-s", required=True, help="Path to scenario.yaml")
+    runp.add_argument("--scenario", "-s", required=False, help="Path to scenario.yaml")
+    runp.add_argument("--scenarios-dir", default=None, help="Run all scenarios under directory (recursively searches for *.yaml/*.yml)")
     runp.add_argument("--schema", default=os.path.join(os.path.dirname(__file__), "schemas", "scenario.schema.json"), help="Path to scenario schema JSON")
     runp.add_argument("--app", "-a", default=None, help="Optional app path to start (can also use open_app step)")
     runp.add_argument("--vars", default=None, help="Optional vars JSON file")
@@ -72,6 +71,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     runp.add_argument("--ci", action="store_true", help="Use CI-optimized timeout settings")
     runp.add_argument("--fast", action="store_true", help="Use fast timeout settings for local development")
     runp.add_argument("--verbose", action="store_true", help="Show detailed step output")
+    runp.add_argument("--summary-json", default=None, help="Optional output path for combined bulk summary (JSON)")
 
     # -------------------------
     # inspect
@@ -105,6 +105,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     valp = sub.add_parser("validate", help="Validate configuration files")
     valp.add_argument("--elements", "-e", required=True, help="Path to elements.yaml file")
     valp.add_argument("--scenario", "-s", default=None, help="Path to scenario YAML file (optional)")
+    valp.add_argument("--scenarios-dir", default=None, help="Validate all scenarios under directory (recursively searches for *.yaml/*.yml)")
     valp.add_argument("--schema", default=None, help="Path to scenario JSON schema")
 
     # -------------------------
@@ -120,6 +121,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     # -------------------------
     
     if args.cmd == "run":
+        if args.scenario and args.scenarios_dir:
+            print("Error: --scenario and --scenarios-dir are mutually exclusive", file=sys.stderr)
+            return 1
+        if not args.scenario and not args.scenarios_dir:
+            print("Error: one of --scenario or --scenarios-dir is required", file=sys.stderr)
+            return 1
+
         # Apply timeout configuration
         _apply_timeout_config(args)
         
@@ -148,42 +156,69 @@ def main(argv: Optional[List[str]] = None) -> int:
                     key, value = var_spec.split("=", 1)
                     variables[key.strip()] = value.strip()
 
-        report = runner.run(
-            scenario_path=args.scenario,
-            app_path=args.app,
-            variables=variables,
-            report_path=args.report,
-        )
+        scenario_paths = _resolve_scenario_paths(args.scenario, args.scenarios_dir, args.elements)
+        if not scenario_paths:
+            print("Error: no scenario files found", file=sys.stderr)
+            return 1
 
-        # Print summary
-        print("\n" + "=" * 60)
-        print(f"Scenario: {report.get('scenario', 'unknown')}")
-        print(f"Status:   {report.get('status', 'unknown').upper()}")
-        print(f"Duration: {report.get('duration_sec', 0):.2f}s")
-        
-        # Print step details if verbose or failed
-        if args.verbose or report.get('status') == 'failed':
-            print("\nStep Details:")
-            for step in report.get('steps', []):
-                status_icon = "+" if step['status'] == 'passed' else "X"
-                print(f"  {status_icon} [{step['index']}] {step['keyword']}: {step['status']} ({step.get('duration_sec', 0):.2f}s)")
-                if step['status'] == 'failed' and 'error' in step:
-                    print(f"      Error: {step['error']}")
-        
-        # Print errors
-        if report.get('errors'):
-            print("\nErrors:")
-            for error in report['errors']:
-                print(f"  - {error}")
-        
-        print("=" * 60)
-        
-        # Also print JSON for machine parsing if verbose
-        if args.verbose:
-            print("\nFull Report (JSON):")
-            print(json.dumps(report, indent=2, ensure_ascii=False))
-        
-        return 0 if report.get("status") == "passed" else 2
+        bulk_mode = len(scenario_paths) > 1 or bool(args.scenarios_dir)
+        scenario_results: List[Dict[str, Any]] = []
+
+        for idx, scenario_path in enumerate(scenario_paths, start=1):
+            per_report_path = _build_report_path(args.report, scenario_path, idx, bulk_mode)
+            report = runner.run(
+                scenario_path=scenario_path,
+                app_path=args.app,
+                variables=variables,
+                report_path=per_report_path,
+            )
+
+            scenario_results.append({
+                "scenario_path": scenario_path,
+                "status": report.get("status", "unknown"),
+                "duration_sec": report.get("duration_sec", 0),
+                "report_path": per_report_path,
+                "errors": report.get("errors", []),
+            })
+
+            # Print per-scenario summary
+            print("\n" + "=" * 60)
+            print(f"Scenario: {report.get('scenario', os.path.basename(scenario_path))}")
+            print(f"Status:   {report.get('status', 'unknown').upper()}")
+            print(f"Duration: {report.get('duration_sec', 0):.2f}s")
+
+            # Print step details if verbose or failed
+            if args.verbose or report.get('status') == 'failed':
+                print("\nStep Details:")
+                for step in report.get('steps', []):
+                    status_icon = "+" if step['status'] == 'passed' else "X"
+                    print(f"  {status_icon} [{step['index']}] {step['keyword']}: {step['status']} ({step.get('duration_sec', 0):.2f}s)")
+                    if step['status'] == 'failed' and 'error' in step:
+                        print(f"      Error: {step['error']}")
+
+            # Print errors
+            if report.get('errors'):
+                print("\nErrors:")
+                for error in report['errors']:
+                    print(f"  - {error}")
+
+            print("=" * 60)
+
+            # Also print JSON for machine parsing if verbose
+            if args.verbose:
+                print("\nFull Report (JSON):")
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+
+        if bulk_mode:
+            _print_bulk_summary(scenario_results)
+
+        combined_summary = _build_combined_summary(scenario_results)
+        if args.summary_json:
+            os.makedirs(os.path.dirname(os.path.abspath(args.summary_json)) or ".", exist_ok=True)
+            with open(args.summary_json, "w", encoding="utf-8") as f:
+                json.dump(combined_summary, f, indent=2, ensure_ascii=False)
+
+        return 0 if combined_summary["failed"] == 0 else 2
 
     if args.cmd == "inspect":
         try:
@@ -246,6 +281,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.cmd == "validate":
         errors = []
+
+        if args.scenario and args.scenarios_dir:
+            print("Error: --scenario and --scenarios-dir are mutually exclusive", file=sys.stderr)
+            return 1
+        if not args.scenario and not args.scenarios_dir:
+            print("Error: one of --scenario or --scenarios-dir is required", file=sys.stderr)
+            return 1
         
         try:
             repo = Repository(args.elements)
@@ -255,23 +297,50 @@ def main(argv: Optional[List[str]] = None) -> int:
         except Exception as e:
             errors.append(f"Elements file invalid: {e}")
             print(f"X Elements file is invalid: {e}", file=sys.stderr)
-        
-        if args.scenario:
+
+        scenario_paths = _resolve_scenario_paths(args.scenario, args.scenarios_dir, args.elements)
+        if not scenario_paths:
+            print("Error: no scenario files found", file=sys.stderr)
+            return 1
+
+        validation_results: List[Dict[str, Any]] = []
+        try:
+            import yaml as yaml_lib
+            schema_path = args.schema or os.path.join(
+                os.path.dirname(__file__), "schemas", "scenario.schema.json"
+            )
+            runner = Runner(repo, schema_path=schema_path)
+        except Exception as e:
+            errors.append(f"Scenario validation setup failed: {e}")
+            print(f"X Scenario validation setup failed: {e}", file=sys.stderr)
+            return 1
+
+        for scenario_path in scenario_paths:
             try:
-                import yaml as yaml_lib
-                schema_path = args.schema or os.path.join(
-                    os.path.dirname(__file__), "schemas", "scenario.schema.json"
-                )
-                runner = Runner(repo, schema_path=schema_path)
-                with open(args.scenario, 'r', encoding='utf-8') as f:
+                with open(scenario_path, "r", encoding="utf-8") as f:
                     scenario = yaml_lib.safe_load(f)
                 runner.validate(scenario)
-                steps_count = len(scenario.get('steps', []))
-                print(f"+ Scenario file is valid: {args.scenario}")
+                steps_count = len(scenario.get('steps', [])) if isinstance(scenario, dict) else 0
+                print(f"+ Scenario file is valid: {scenario_path}")
                 print(f"  - Steps: {steps_count}")
+                validation_results.append({
+                    "scenario_path": scenario_path,
+                    "status": "valid",
+                    "steps": steps_count,
+                })
             except Exception as e:
-                errors.append(f"Scenario file invalid: {e}")
-                print(f"X Scenario file is invalid: {e}", file=sys.stderr)
+                errors.append(f"Scenario file invalid: {scenario_path}: {e}")
+                print(f"X Scenario file is invalid: {scenario_path}: {e}", file=sys.stderr)
+                validation_results.append({
+                    "scenario_path": scenario_path,
+                    "status": "invalid",
+                    "error": f"{type(e).__name__}: {e}",
+                })
+
+        if len(validation_results) > 1 or args.scenarios_dir:
+            _print_validation_summary(validation_results)
+
+        return 2 if errors else 0
         
         return 1 if errors else 0
 
@@ -306,6 +375,89 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     return 1
+
+def _resolve_scenario_paths(
+    single_scenario: Optional[str],
+    scenarios_dir: Optional[str],
+    elements_path: Optional[str],
+) -> List[str]:
+    """Resolve scenarios for single or bulk execution."""
+    if single_scenario:
+        return [os.path.abspath(single_scenario)]
+    if not scenarios_dir:
+        return []
+
+    base = Path(scenarios_dir).resolve()
+    if not base.exists() or not base.is_dir():
+        return []
+
+    scenario_files = list(base.rglob("*.yaml")) + list(base.rglob("*.yml"))
+    elements_abs = os.path.abspath(elements_path) if elements_path else None
+    unique = sorted({str(path.resolve()) for path in scenario_files})
+    if elements_abs:
+        unique = [path for path in unique if os.path.abspath(path) != elements_abs]
+    return unique
+
+
+def _build_report_path(base_report_path: str, scenario_path: str, index: int, bulk_mode: bool) -> str:
+    """Build report path while preserving existing single-scenario behavior."""
+    if not bulk_mode:
+        return base_report_path
+
+    base = Path(base_report_path)
+    stem = base.stem
+    suffix = base.suffix or ".json"
+    scenario_stem = Path(scenario_path).stem
+    filename = f"{stem}__{index:03d}_{scenario_stem}{suffix}"
+    return str((base.parent / filename).resolve())
+
+
+def _print_bulk_summary(results: List[Dict[str, Any]]) -> None:
+    """Print compact summary of all scenarios in bulk mode."""
+    print("\nBulk Summary")
+    print("-" * 80)
+    print(f"{'#':<4} {'Status':<8} {'Duration':<10} Scenario (Report)")
+    for idx, result in enumerate(results, start=1):
+        status = str(result.get("status", "unknown")).upper()
+        duration = float(result.get("duration_sec", 0))
+        scenario_path = str(result.get("scenario_path", ""))
+        report_path = str(result.get("report_path", ""))
+        print(f"{idx:<4} {status:<8} {duration:<10.2f} {scenario_path} ({report_path})")
+    summary = _build_combined_summary(results)
+    print("-" * 80)
+    print(
+        f"Total: {summary['total']}  Passed: {summary['passed']}  "
+        f"Failed: {summary['failed']}  Exit code: {0 if summary['failed'] == 0 else 2}"
+    )
+
+
+def _build_combined_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build machine-readable combined summary."""
+    passed = sum(1 for item in results if item.get("status") == "passed")
+    failed = sum(1 for item in results if item.get("status") != "passed")
+    return {
+        "total": len(results),
+        "passed": passed,
+        "failed": failed,
+        "status": "passed" if failed == 0 else "failed",
+        "results": results,
+    }
+
+
+def _print_validation_summary(results: List[Dict[str, Any]]) -> None:
+    """Print summary for bulk validation."""
+    print("\nValidation Summary")
+    print("-" * 80)
+    print(f"{'#':<4} {'Status':<8} Scenario")
+    for idx, result in enumerate(results, start=1):
+        status = str(result.get("status", "unknown")).upper()
+        scenario_path = str(result.get("scenario_path", ""))
+        print(f"{idx:<4} {status:<8} {scenario_path}")
+    total = len(results)
+    invalid = sum(1 for item in results if item.get("status") != "valid")
+    valid = total - invalid
+    print("-" * 80)
+    print(f"Total: {total}  Valid: {valid}  Invalid: {invalid}")
 
 
 if __name__ == "__main__":
