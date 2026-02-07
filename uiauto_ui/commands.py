@@ -93,10 +93,17 @@ RUN_COMMAND = CommandSpec(
         ),
         ArgSpec(
             name="scenario", short="s",
-            arg_type=ArgType.PATH, required=True,
+            arg_type=ArgType.PATH, required=False,
             help_text="Path to scenario.yaml",
             category=Category.BASIC,
             file_filter="YAML Files (*.yaml *.yml);;All Files (*)",
+        ),
+        ArgSpec(
+            name="scenarios-dir",
+            arg_type=ArgType.DIR_PATH, required=False,
+            help_text="Run all scenarios under directory",
+            category=Category.BASIC,
+            placeholder="Directory of scenarios",
         ),
         
         # Basic optional
@@ -310,6 +317,13 @@ VALIDATE_COMMAND = CommandSpec(
             help_text="Path to scenario YAML file (optional)",
             category=Category.BASIC,
             file_filter="YAML Files (*.yaml *.yml);;All Files (*)",
+        ),
+        ArgSpec(
+            name="scenarios-dir",
+            arg_type=ArgType.DIR_PATH, required=False, default=None,
+            help_text="Validate all scenarios under directory",
+            category=Category.BASIC,
+            placeholder="Directory of scenarios",
         ),
         ArgSpec(
             name="schema",

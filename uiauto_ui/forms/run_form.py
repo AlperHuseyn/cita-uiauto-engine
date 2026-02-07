@@ -8,9 +8,9 @@ from typing import Dict, Any, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QGroupBox, QCheckBox, QDoubleSpinBox, QPushButton
+    QGroupBox, QCheckBox, QDoubleSpinBox, QPushButton,
+    QLabel, QRadioButton, QButtonGroup, QMessageBox
 )
-from PySide6.QtCore import Signal
 
 from .base_form import BaseCommandForm
 from ..widgets.path_selector import PathSelector
@@ -28,7 +28,11 @@ class RunForm(BaseCommandForm):
     """
     
     def __init__(self, parent: Optional[QWidget] = None):
+        self._mode = "single"
+        self._updating_mode = False
+        self._validation_state = "needs_validation"
         super().__init__(parent)
+        self._set_validation_state("needs_validation")
     
     def _get_command_name(self) -> str:
         return "run"
@@ -44,7 +48,7 @@ class RunForm(BaseCommandForm):
             file_filter="YAML Files (*.yaml *.yml);;All Files (*)",
             placeholder="Path to elements.yaml"
         )
-        self._elements_path.path_changed.connect(self._update_preview)
+        self._elements_path.path_changed.connect(self._on_inputs_changed)
         self._register_widget("elements", self._elements_path)
         required_layout.addRow("Elements:", self._elements_path)
         
@@ -53,11 +57,48 @@ class RunForm(BaseCommandForm):
             file_filter="YAML Files (*.yaml *.yml);;All Files (*)",
             placeholder="Path to scenario.yaml"
         )
-        self._scenario_path.path_changed.connect(self._update_preview)
+        self._scenario_path.setToolTip("Provide either a scenario file or a scenarios directory")
+        self._scenario_path.path_changed.connect(self._on_scenario_path_changed)
         self._register_widget("scenario", self._scenario_path)
+
+        self._scenarios_dir = PathSelector(
+            mode="dir",
+            file_filter="",
+            placeholder="Path to scenarios directory"
+        )
+        self._scenarios_dir.setToolTip("Provide either a scenario file or a scenarios directory")
+        self._scenarios_dir.path_changed.connect(self._on_scenarios_dir_changed)
+        self._register_widget("scenarios-dir", self._scenarios_dir)
+
+        mode_widget = QWidget()
+        mode_layout = QHBoxLayout(mode_widget)
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(10)
+
+        self._mode_group = QButtonGroup(self)
+        self._single_mode_rb = QRadioButton("Scenario File")
+        self._single_mode_rb.setToolTip("Run a single scenario file")
+        self._bulk_mode_rb = QRadioButton("Scenarios Dir")
+        self._bulk_mode_rb.setToolTip("Run all YAML scenarios in a directory")
+
+        self._mode_group.addButton(self._single_mode_rb)
+        self._mode_group.addButton(self._bulk_mode_rb)
+        self._single_mode_rb.toggled.connect(self._on_mode_toggled)
+        self._bulk_mode_rb.toggled.connect(self._on_mode_toggled)
+
+        mode_layout.addWidget(self._single_mode_rb)
+        mode_layout.addWidget(self._bulk_mode_rb)
+        mode_layout.addStretch()
+
+        required_layout.addRow("Mode:", mode_widget)
         required_layout.addRow("Scenario:", self._scenario_path)
+        required_layout.addRow("Scenarios Dir:", self._scenarios_dir)
+
+        self._validation_status = QLabel()
+        required_layout.addRow("Validation:", self._validation_status)
         
         self._main_layout.addWidget(required_group)
+        self._set_mode("single", clear_other=False)
         
         # === Options Section ===
         options_group, options_layout = self._create_group("Options")
@@ -67,7 +108,7 @@ class RunForm(BaseCommandForm):
             file_filter="Executables (*.exe);;All Files (*)",
             placeholder="Optional: Application to launch"
         )
-        self._app_path.path_changed.connect(self._update_preview)
+        self._app_path.path_changed.connect(self._on_inputs_changed)
         self._register_widget("app", self._app_path)
         options_layout.addRow("App Path:", self._app_path)
         
@@ -77,12 +118,12 @@ class RunForm(BaseCommandForm):
             placeholder="report.json"
         )
         self._report_path.set_value("report.json")
-        self._report_path.path_changed.connect(self._update_preview)
+        self._report_path.path_changed.connect(self._on_inputs_changed)
         self._register_widget("report", self._report_path)
         options_layout.addRow("Report:", self._report_path)
         
         self._verbose_cb = QCheckBox("Verbose output")
-        self._verbose_cb.stateChanged.connect(self._update_preview)
+        self._verbose_cb.stateChanged.connect(self._on_inputs_changed)
         self._register_widget("verbose", self._verbose_cb)
         options_layout.addRow("", self._verbose_cb)
         
@@ -102,7 +143,7 @@ class RunForm(BaseCommandForm):
         self._timeout_spin.setSpecialValueText("Default")
         self._timeout_spin.setValue(0)
         self._timeout_spin.setToolTip("Override default timeout in seconds")
-        self._timeout_spin.valueChanged.connect(self._update_preview)
+        self._timeout_spin.valueChanged.connect(self._on_inputs_changed)
         self._register_widget("timeout", self._timeout_spin)
         advanced_layout.addRow("Timeout (s):", self._timeout_spin)
         
@@ -111,13 +152,13 @@ class RunForm(BaseCommandForm):
         
         self._ci_cb = QCheckBox("CI Mode")
         self._ci_cb.setToolTip("Use CI-optimized timeout settings")
-        self._ci_cb.stateChanged.connect(self._update_preview)
+        self._ci_cb.stateChanged.connect(self._on_inputs_changed)
         self._register_widget("ci", self._ci_cb)
         mode_layout.addWidget(self._ci_cb)
         
         self._fast_cb = QCheckBox("Fast Mode")
         self._fast_cb.setToolTip("Use fast timeout settings for local dev")
-        self._fast_cb.stateChanged.connect(self._update_preview)
+        self._fast_cb.stateChanged.connect(self._on_inputs_changed)
         self._register_widget("fast", self._fast_cb)
         mode_layout.addWidget(self._fast_cb)
         
@@ -130,7 +171,7 @@ class RunForm(BaseCommandForm):
             file_filter="JSON Files (*.json);;All Files (*)",
             placeholder="Custom scenario schema"
         )
-        self._schema_path.path_changed.connect(self._update_preview)
+        self._schema_path.path_changed.connect(self._on_inputs_changed)
         self._register_widget("schema", self._schema_path)
         advanced_layout.addRow("Schema:", self._schema_path)
         
@@ -140,13 +181,13 @@ class RunForm(BaseCommandForm):
             file_filter="JSON Files (*.json);;All Files (*)",
             placeholder="Variables JSON file"
         )
-        self._vars_path.path_changed.connect(self._update_preview)
+        self._vars_path.path_changed.connect(self._on_inputs_changed)
         self._register_widget("vars", self._vars_path)
         advanced_layout.addRow("Vars File:", self._vars_path)
         
         # Inline vars
         self._var_table = KeyValueTable()
-        self._var_table.values_changed.connect(self._update_preview)
+        self._var_table.values_changed.connect(self._on_inputs_changed)
         self._register_widget("var", self._var_table)
         advanced_layout.addRow("Inline Vars:", self._var_table)
         
@@ -177,7 +218,8 @@ class RunForm(BaseCommandForm):
         """Collect all form values."""
         values = {
             "elements": self._elements_path.value(),
-            "scenario": self._scenario_path.value(),
+            "scenario": self._scenario_path.value() if self._mode == "single" else "",
+            "scenarios-dir": self._scenarios_dir.value() if self._mode == "bulk" else "",
             "app": self._app_path.value(),
             "report": self._report_path.value(),
             "verbose": self._verbose_cb.isChecked(),
@@ -198,6 +240,16 @@ class RunForm(BaseCommandForm):
             values["fast"] = True
         
         return values
+
+    def _collect_validate_values(self) -> Dict[str, Any]:
+        """Collect values for validate command."""
+        values = {
+            "elements": self._elements_path.value(),
+            "scenario": self._scenario_path.value() if self._mode == "single" else "",
+            "scenarios-dir": self._scenarios_dir.value() if self._mode == "bulk" else "",
+            "schema": self._schema_path.value(),
+        }
+        return values
     
     def set_values(self, values: Dict[str, Any]) -> None:
         """Populate form from values dictionary."""
@@ -205,6 +257,8 @@ class RunForm(BaseCommandForm):
             self._elements_path.set_value(values["elements"])
         if "scenario" in values:
             self._scenario_path.set_value(values["scenario"])
+        if "scenarios-dir" in values:
+            self._scenarios_dir.set_value(values["scenarios-dir"])
         if "app" in values:
             self._app_path.set_value(values["app"])
         if "report" in values:
@@ -223,13 +277,16 @@ class RunForm(BaseCommandForm):
             self._vars_path.set_value(values["vars"])
         if "var" in values:
             self._var_table.set_values(values["var"])
-        
+
+        self._set_mode("bulk" if self._scenarios_dir.value() else "single", clear_other=False)
+        self._invalidate_validation()
         self._update_preview()
     
     def reset(self) -> None:
         """Reset form to defaults."""
         self._elements_path.clear()
         self._scenario_path.clear()
+        self._scenarios_dir.clear()
         self._app_path.clear()
         self._report_path.set_value("report.json")
         self._verbose_cb.setChecked(False)
@@ -239,6 +296,8 @@ class RunForm(BaseCommandForm):
         self._schema_path.clear()
         self._vars_path.clear()
         self._var_table.clear()
+        self._set_mode("single", clear_other=True)
+        self._invalidate_validation()
         self._update_preview()
     
     # -------------------------------------------------------------------------
@@ -252,8 +311,18 @@ class RunForm(BaseCommandForm):
             self._elements_path.set_value(elements)
         
         scenario = settings_service.load_last_scenario()
-        if scenario:
+        scenarios_dir = settings_service.load_last_scenarios_dir()
+        last_mode = settings_service.load_last_scenario_mode()
+
+        if last_mode == "bulk" and scenarios_dir:
+            self._scenarios_dir.set_value(scenarios_dir)
+            self._set_mode("bulk", clear_other=False)
+        elif scenario:
             self._scenario_path.set_value(scenario)
+            self._set_mode("single", clear_other=False)
+        elif scenarios_dir:
+            self._scenarios_dir.set_value(scenarios_dir)
+            self._set_mode("bulk", clear_other=False)
         
         report = settings_service.load_last_report()
         if report:
@@ -262,7 +331,8 @@ class RunForm(BaseCommandForm):
         app = settings_service.load_last_app()
         if app:
             self._app_path.set_value(app)
-        
+
+        self._invalidate_validation()
         self._update_preview()
     
     def save_last_paths(self, settings_service) -> None:
@@ -274,6 +344,12 @@ class RunForm(BaseCommandForm):
         scenario = self._scenario_path.value()
         if scenario:
             settings_service.save_last_scenario(scenario)
+
+        scenarios_dir = self._scenarios_dir.value()
+        if scenarios_dir:
+            settings_service.save_last_scenarios_dir(scenarios_dir)
+
+        settings_service.save_last_scenario_mode(self._mode)
         
         report = self._report_path.value()
         if report:
@@ -282,3 +358,143 @@ class RunForm(BaseCommandForm):
         app = self._app_path.value()
         if app:
             settings_service.save_last_app(app)
+
+    # -------------------------------------------------------------------------
+    # Validation state management
+    # -------------------------------------------------------------------------
+
+    def _set_validation_state(self, state: str) -> None:
+        """Set validation status and update run button."""
+        self._validation_state = state
+        if state == "validated":
+            self._validation_status.setText("Validated ✅")
+            self._validation_status.setStyleSheet("color: #2e7d32; font-weight: bold;")
+        elif state == "failed":
+            self._validation_status.setText("Validation failed ❌")
+            self._validation_status.setStyleSheet("color: #c62828; font-weight: bold;")
+        elif state == "validating":
+            self._validation_status.setText("Validating...")
+            self._validation_status.setStyleSheet("color: #1565c0; font-weight: bold;")
+        else:
+            self._validation_status.setText("Needs validation")
+            self._validation_status.setStyleSheet("color: #6d4c41; font-weight: bold;")
+
+        self._update_run_enabled()
+
+    def _invalidate_validation(self) -> None:
+        if self._validation_state != "needs_validation":
+            self._set_validation_state("needs_validation")
+        else:
+            self._update_run_enabled()
+
+    def _update_run_enabled(self) -> None:
+        should_enable = (not self._is_running) and self._validation_state == "validated"
+        if hasattr(self, "_run_btn"):
+            self._run_btn.setEnabled(should_enable)
+
+    def _on_inputs_changed(self) -> None:
+        self._invalidate_validation()
+        self._update_preview()
+        self.values_changed.emit()
+
+    def _on_scenario_path_changed(self, text: str) -> None:
+        if self._updating_mode:
+            return
+        if text.strip():
+            self._set_mode("single", clear_other=True)
+        self._on_inputs_changed()
+
+    def _on_scenarios_dir_changed(self, text: str) -> None:
+        if self._updating_mode:
+            return
+        if text.strip():
+            self._set_mode("bulk", clear_other=True)
+        self._on_inputs_changed()
+
+    def _on_mode_toggled(self) -> None:
+        if self._updating_mode:
+            return
+        if self._single_mode_rb.isChecked():
+            self._set_mode("single", clear_other=True)
+        elif self._bulk_mode_rb.isChecked():
+            self._set_mode("bulk", clear_other=True)
+
+    def _set_mode(self, mode: str, clear_other: bool = True) -> None:
+        if mode not in ("single", "bulk"):
+            return
+        self._updating_mode = True
+        try:
+            self._mode = mode
+            if mode == "single":
+                self._single_mode_rb.setChecked(True)
+                self._scenario_path.set_enabled(True)
+                self._scenarios_dir.set_enabled(False)
+                if clear_other:
+                    self._scenarios_dir.clear()
+            else:
+                self._bulk_mode_rb.setChecked(True)
+                self._scenario_path.set_enabled(False)
+                self._scenarios_dir.set_enabled(True)
+                if clear_other:
+                    self._scenario_path.clear()
+        finally:
+            self._updating_mode = False
+        self._invalidate_validation()
+
+    # -------------------------------------------------------------------------
+    # Command execution hooks
+    # -------------------------------------------------------------------------
+
+    def _on_validate_clicked(self) -> None:
+        """Handle validate button click (CLI validate)."""
+        result = self.validate()
+
+        if not result.is_valid:
+            QMessageBox.warning(
+                self,
+                "Validation Error",
+                result.error_message
+            )
+            self._set_validation_state("failed")
+            return
+
+        if result.warnings:
+            response = QMessageBox.warning(
+                self,
+                "Warnings",
+                f"{result.all_messages}\n\nContinue anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if response != QMessageBox.Yes:
+                return
+
+        argv = self.build_validate_argv()
+        if argv:
+            self._set_validation_state("validating")
+            self.command_requested.emit(argv)
+
+    def build_validate_argv(self) -> list:
+        """Build CLI argv for validate command."""
+        from ..commands import ArgBuilder, get_command
+
+        values = self._collect_validate_values()
+        command_spec = get_command("validate")
+        builder = ArgBuilder(command_spec)
+        for name, value in values.items():
+            builder.set(name, value)
+        return builder.build()
+
+    def handle_command_result(self, result) -> None:
+        """Handle execution result to update validation state."""
+        if result.command != "validate":
+            return
+        if result.success:
+            self._set_validation_state("validated")
+        else:
+            self._set_validation_state("failed")
+
+    def set_running(self, is_running: bool) -> None:
+        """Override to keep run disabled until validated."""
+        super().set_running(is_running)
+        self._update_run_enabled()

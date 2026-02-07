@@ -37,6 +37,7 @@ class SettingsService:
     
     KEY_LAST_ELEMENTS = "paths/last_elements"
     KEY_LAST_SCENARIO = "paths/last_scenario"
+    KEY_LAST_SCENARIOS_DIR = "paths/last_scenarios_dir"
     KEY_LAST_REPORT = "paths/last_report"
     KEY_LAST_APP = "paths/last_app"
     KEY_LAST_OUT_DIR = "paths/last_out_dir"
@@ -49,6 +50,7 @@ class SettingsService:
     KEY_VERBOSE_DEFAULT = "ui/verbose_default"
     KEY_CI_MODE_DEFAULT = "ui/ci_mode_default"
     KEY_THEME = "ui/theme"
+    KEY_SCENARIO_MODE = "ui/scenario_mode"
     
     MAX_RECENT_FILES = 10
     
@@ -123,6 +125,12 @@ class SettingsService:
     
     def load_last_scenario(self) -> str:
         return self.load_path(self.KEY_LAST_SCENARIO)
+    
+    def save_last_scenarios_dir(self, path: str) -> None:
+        self.save_path(self.KEY_LAST_SCENARIOS_DIR, path)
+
+    def load_last_scenarios_dir(self) -> str:
+        return self.load_path(self.KEY_LAST_SCENARIOS_DIR)
     
     def save_last_report(self, path: str) -> None:
         self.save_path(self.KEY_LAST_REPORT, path)
@@ -211,6 +219,11 @@ class SettingsService:
     def load_theme(self) -> str:
         return str(self._settings.value(self.KEY_THEME, "dark"))
 
+    def save_last_scenario_mode(self, mode: str) -> None:
+        self._settings.setValue(self.KEY_SCENARIO_MODE, mode)
+
+    def load_last_scenario_mode(self) -> str:
+        return str(self._settings.value(self.KEY_SCENARIO_MODE, "single"))
     
     # -------------------------------------------------------------------------
     # Utilities

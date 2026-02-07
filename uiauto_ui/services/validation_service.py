@@ -292,12 +292,16 @@ class ValidationService:
         else:
             result.add_error("Elements file is required")
         
-        # Required: scenario
         scenario = values.get("scenario", "")
-        if scenario:
+        scenarios_dir = values.get("scenarios-dir", "")
+        if scenario and scenarios_dir:
+            result.add_error("Provide either a scenario file or a scenarios directory, not both")
+        elif scenario:
             result.merge(self.validate_yaml_file(scenario, "Scenario file"))
+        elif scenarios_dir:
+            result.merge(self.validate_directory_exists(scenarios_dir, "Scenarios directory"))
         else:
-            result.add_error("Scenario file is required")
+            result.add_error("Scenario file or scenarios directory is required")
         
         # Optional: app
         app = values.get("app", "")
@@ -368,10 +372,16 @@ class ValidationService:
         else:
             result.add_error("Elements file is required")
         
-        # Optional: scenario
         scenario = values.get("scenario", "")
-        if scenario:
+        scenarios_dir = values.get("scenarios-dir", "")
+        if scenario and scenarios_dir:
+            result.add_error("Provide either a scenario file or a scenarios directory, not both")
+        elif scenario:
             result.merge(self.validate_yaml_file(scenario, "Scenario file"))
+        elif scenarios_dir:
+            result.merge(self.validate_directory_exists(scenarios_dir, "Scenarios directory"))
+        else:
+            result.add_error("Scenario file or scenarios directory is required")
         
         return result
     

@@ -391,6 +391,8 @@ class MainWindow(QMainWindow):
         current_form = self._tabs.currentWidget()
         if hasattr(current_form, 'set_running'):
             current_form.set_running(False)
+        if hasattr(current_form, 'handle_command_result'):
+            current_form.handle_command_result(result)
         
         # Special handling for record
         if result.command == "record":
