@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from .exceptions import ConfigError
+from .config import TimeConfig
 
 
 ALLOWED_LOCATOR_KEYS = {
@@ -48,6 +49,10 @@ class Repository:
         self._elements = self._raw.get("elements", {}) or {}
 
         self._validate()
+        TimeConfig.apply_app_defaults(
+            default_timeout=self._app.default_timeout,
+            polling_interval=self._app.polling_interval,
+        )
 
     @staticmethod
     def _load_yaml(path: str) -> Dict[str, Any]:

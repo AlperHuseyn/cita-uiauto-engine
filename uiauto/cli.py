@@ -14,8 +14,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .actionlogger import ACTION_LOGGER
-from .config import (TimeConfig, TimeoutSettings, configure_for_ci,
-                     configure_for_local_dev)
+from .config import (
+    TimeConfig,
+    configure_for_ci,
+    configure_for_local_dev,
+    configure_for_slow,
+)
+from .waits import TIMING_LOGGER
 from .context import ActionContextManager
 from .inspector import (emit_elements_yaml_stateful, inspect_window,
                         write_inspect_outputs)
@@ -37,14 +42,12 @@ def _apply_timeout_config(args: argparse.Namespace) -> None:
         configure_for_ci()
     elif getattr(args, 'fast', False):
         configure_for_local_dev()
-    
+    elif getattr(args, 'slow', False):
+        configure_for_slow()
+
     timeout = getattr(args, 'timeout', None)
     if timeout is not None:
-        config = TimeConfig.default()
-        config.element_wait = TimeoutSettings(timeout=timeout, interval=0.2)
-        config.window_wait = TimeoutSettings(timeout=timeout * 2, interval=0.5)
-        config.visibility_wait = TimeoutSettings(timeout=timeout, interval=0.2)
-        config.enabled_wait = TimeoutSettings(timeout=timeout / 2, interval=0.2)
+        TimeConfig.apply_timeout_override(timeout)
 
 
 def _resolve_scenario_paths(
@@ -142,12 +145,24 @@ def _configure_action_logger_from_env() -> None:
     level = os.getenv("UIAUTO_ACTION_LOG_LEVEL", "INFO")
     ACTION_LOGGER.configure(console=True, file_path=log_file, level=level)
     ACTION_LOGGER.enable()
-    
+
+def _configure_timing_logger_from_env() -> None:
+    """Configure timing logging from environment variables."""
+    enabled = os.getenv("UIAUTO_TIMING_LOGGING", "").lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        TIMING_LOGGER.disable()
+        return
+
+    log_file = os.getenv("UIAUTO_TIMING_LOG_FILE")
+    level = os.getenv("UIAUTO_TIMING_LOG_LEVEL", "INFO")
+    TIMING_LOGGER.configure(console=True, file_path=log_file, level=level)
+    TIMING_LOGGER.enable()
 
 def main(argv: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
     argv = argv or sys.argv[1:]
     _configure_action_logger_from_env()
+    _configure_timing_logger_from_env()
     p = argparse.ArgumentParser(
         prog="uiauto",
         description="cita-uiauto-engine - Windows UI automation framework"
@@ -166,9 +181,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     runp.add_argument("--vars", default=None, help="Optional vars JSON file")
     runp.add_argument("--var", "-v", action="append", help="Variable in KEY=VALUE format (can be used multiple times)")
     runp.add_argument("--report", "-r", default="report.json", help="Report output path (JSON)")
-    runp.add_argument("--timeout", "-t", type=float, default=None, help="Override default timeout in seconds")
+    runp.add_argument("--timeout", "-t", type=float, default=None, help="Override base timeouts in seconds (intervals stay from preset)")
     runp.add_argument("--ci", action="store_true", help="Use CI-optimized timeout settings")
     runp.add_argument("--fast", action="store_true", help="Use fast timeout settings for local development")
+    runp.add_argument("--slow", action="store_true", help="Use slow timeout settings for unstable environments")
     runp.add_argument("--verbose", action="store_true", help="Show detailed step output")
     runp.add_argument("--summary-json", default=None, help="Optional output path for combined bulk summary (JSON)")
 

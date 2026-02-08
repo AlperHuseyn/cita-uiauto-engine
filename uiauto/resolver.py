@@ -15,6 +15,7 @@ from .exceptions import LocatorAttempt, WindowNotFoundError, ElementNotFoundErro
 from .waits import wait_until
 from .artifacts import make_artifacts
 from .context import ActionContextManager
+from .config import TimeConfig
 
 
 TITLEBAR_BUTTON_TITLES = {"Close", "Minimize", "Maximize"}
@@ -69,12 +70,12 @@ class Resolver:
     @property
     def timeout(self) -> float:
         """Default timeout from repository configuration."""
-        return self.repo.app.default_timeout
+        return TimeConfig.current().resolve_element.timeout
 
     @property
     def interval(self) -> float:
         """Polling interval from repository configuration."""
-        return self.repo.app.polling_interval
+        return TimeConfig.current().resolve_element.interval
     
     def enable_cache(self, enabled: bool = True) -> None:
         """Enable or disable element caching."""
@@ -95,7 +96,9 @@ class Resolver:
         @return Window wrapper object
         @throws WindowNotFoundError if window not found within timeout
         """
-        effective_timeout = timeout if timeout is not None else self.timeout
+        config = TimeConfig.current().resolve_window
+        effective_timeout = timeout if timeout is not None else config.timeout
+        effective_interval = config.interval
         wspec = self.repo.get_window_spec(window_name)
         locators = wspec.get("locators", [])
         attempts: List[LocatorAttempt] = []
@@ -120,7 +123,7 @@ class Resolver:
             wait_until(
                 pred,
                 timeout=effective_timeout,
-                interval=self.interval,
+                interval=effective_interval,
                 description=f"window '{window_name}' exists+visible"
             )
             return w
@@ -174,6 +177,10 @@ class Resolver:
         """
         effective_timeout = timeout if timeout is not None else self.timeout
         overrides = overrides or {}
+        config = TimeConfig.current().resolve_element
+        if timeout is None:
+            effective_timeout = config.timeout
+        effective_interval = config.interval
         
         espec = self.repo.get_element_spec(element_name)
         window_name = espec["window"]
@@ -214,7 +221,7 @@ class Resolver:
                         elem,
                         meta=meta,
                         default_timeout=effective_timeout,
-                        polling_interval=self.interval,
+                        polling_interval=effective_interval,
                     )
                     
                     # For name/name_re based locators, skip exists() wait
@@ -297,12 +304,14 @@ class Resolver:
         """
         from .waits import wait_until_not
         
-        effective_timeout = timeout if timeout is not None else self.timeout
+        config = TimeConfig.current().disappear_wait
+        effective_timeout = timeout if timeout is not None else config.timeout
+        effective_interval = config.interval
         
         wait_until_not(
             lambda: self.exists(element_name, timeout=0, overrides=overrides),
             timeout=effective_timeout,
-            interval=self.interval,
+            interval=effective_interval,
             description=f"element '{element_name}' to disappear"
         )
 
@@ -378,7 +387,13 @@ class Resolver:
                     return cw.exists()
                 except Exception:
                     return False
-            wait_until(pred, timeout=min(1.5, self.timeout), interval=self.interval, description="child_window exists quick")
+            config = TimeConfig.current().child_window_quick
+            wait_until(
+                pred,
+                timeout=config.timeout,
+                interval=config.interval,
+                description="child_window exists quick",
+            )
             return cw
         except Exception:
             pass

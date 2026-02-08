@@ -133,6 +133,12 @@ class RunForm(BaseCommandForm):
         self._action_logging_cb.stateChanged.connect(self._on_action_logging_toggled)
         self._register_widget("action-logging", self._action_logging_cb)
         options_layout.addRow("", self._action_logging_cb)
+
+        self._timing_logging_cb = QCheckBox("Timing Debug Logs")
+        self._timing_logging_cb.setToolTip("Show wait/retry timing events in output (dev mode)")
+        self._timing_logging_cb.stateChanged.connect(self._on_timing_logging_toggled)
+        self._register_widget("timing-logging", self._timing_logging_cb)
+        options_layout.addRow("", self._timing_logging_cb)
         
         self._main_layout.addWidget(options_group)
         
@@ -154,23 +160,41 @@ class RunForm(BaseCommandForm):
         self._register_widget("timeout", self._timeout_spin)
         advanced_layout.addRow("Timeout (s):", self._timeout_spin)
         
-        # Mode flags
-        mode_layout = QHBoxLayout()
-        
-        self._ci_cb = QCheckBox("CI Mode")
-        self._ci_cb.setToolTip("Use CI-optimized timeout settings")
-        self._ci_cb.stateChanged.connect(self._on_inputs_changed)
-        self._register_widget("ci", self._ci_cb)
-        mode_layout.addWidget(self._ci_cb)
-        
-        self._fast_cb = QCheckBox("Fast Mode")
-        self._fast_cb.setToolTip("Use fast timeout settings for local dev")
-        self._fast_cb.stateChanged.connect(self._on_inputs_changed)
-        self._register_widget("fast", self._fast_cb)
-        mode_layout.addWidget(self._fast_cb)
-        
-        mode_layout.addStretch()
-        advanced_layout.addRow("", mode_layout)
+        # Preset flags
+        preset_layout = QHBoxLayout()
+
+        self._preset_group = QButtonGroup(self)
+        self._preset_default_rb = QRadioButton("Default")
+        self._preset_default_rb.setToolTip("Use default timing preset")
+        self._preset_fast_rb = QRadioButton("Fast")
+        self._preset_fast_rb.setToolTip("Use fast timeout settings for local dev")
+        self._preset_slow_rb = QRadioButton("Slow")
+        self._preset_slow_rb.setToolTip("Use slow timeout settings for unstable environments")
+        self._preset_ci_rb = QRadioButton("CI")
+        self._preset_ci_rb.setToolTip("Use CI-optimized timeout settings")
+
+        self._preset_group.addButton(self._preset_default_rb)
+        self._preset_group.addButton(self._preset_fast_rb)
+        self._preset_group.addButton(self._preset_slow_rb)
+        self._preset_group.addButton(self._preset_ci_rb)
+        self._preset_default_rb.setChecked(True)
+
+        self._register_widget("preset-default", self._preset_default_rb)
+        self._register_widget("preset-fast", self._preset_fast_rb)
+        self._register_widget("preset-slow", self._preset_slow_rb)
+        self._register_widget("preset-ci", self._preset_ci_rb)
+
+        for btn in (
+            self._preset_default_rb,
+            self._preset_fast_rb,
+            self._preset_slow_rb,
+            self._preset_ci_rb,
+        ):
+            btn.toggled.connect(self._on_inputs_changed)
+            preset_layout.addWidget(btn)
+
+        preset_layout.addStretch()
+        advanced_layout.addRow("Preset:", preset_layout)
         
         # Schema path
         self._schema_path = PathSelector(
@@ -241,9 +265,11 @@ class RunForm(BaseCommandForm):
             values["timeout"] = timeout
         
         # Mode flags
-        if self._ci_cb.isChecked():
+        if self._preset_ci_rb.isChecked():
             values["ci"] = True
-        if self._fast_cb.isChecked():
+        elif self._preset_slow_rb.isChecked():
+            values["slow"] = True
+        elif self._preset_fast_rb.isChecked():
             values["fast"] = True
         
         return values
@@ -274,10 +300,14 @@ class RunForm(BaseCommandForm):
             self._verbose_cb.setChecked(values["verbose"])
         if "timeout" in values:
             self._timeout_spin.setValue(values["timeout"])
-        if "ci" in values:
-            self._ci_cb.setChecked(values["ci"])
-        if "fast" in values:
-            self._fast_cb.setChecked(values["fast"])
+        if values.get("ci"):
+            self._preset_ci_rb.setChecked(True)
+        elif values.get("slow"):
+            self._preset_slow_rb.setChecked(True)
+        elif values.get("fast"):
+            self._preset_fast_rb.setChecked(True)
+        else:
+            self._preset_default_rb.setChecked(True)
         if "schema" in values:
             self._schema_path.set_value(values["schema"])
         if "vars" in values:
@@ -297,9 +327,11 @@ class RunForm(BaseCommandForm):
         self._app_path.clear()
         self._report_path.set_value("report.json")
         self._verbose_cb.setChecked(False)
+        self._action_logging_cb.setChecked(False)
+        self._timing_logging_cb.setChecked(False)
         self._timeout_spin.setValue(0)
-        self._ci_cb.setChecked(False)
-        self._fast_cb.setChecked(False)
+        self._preset_default_rb.setChecked(True)
+        
         self._schema_path.clear()
         self._vars_path.clear()
         self._var_table.clear()
@@ -338,12 +370,16 @@ class RunForm(BaseCommandForm):
         if settings_service.load_action_logging_enabled():
             self._action_logging_cb.setChecked(True)
         
+        if settings_service.load_timing_logging_enabled():
+            self._timing_logging_cb.setChecked(True)
+        
         app = settings_service.load_last_app()
         if app:
             self._app_path.set_value(app)
 
         self._invalidate_validation()
         self._update_action_logging_env()
+        self._update_timing_logging_env()
         self._update_preview()
     
     def save_last_paths(self, settings_service) -> None:
@@ -367,6 +403,7 @@ class RunForm(BaseCommandForm):
             settings_service.save_last_report(report)
         
         settings_service.save_action_logging_enabled(self._action_logging_cb.isChecked())
+        settings_service.save_timing_logging_enabled(self._timing_logging_cb.isChecked())
         
         app = self._app_path.value()
         if app:
@@ -408,6 +445,7 @@ class RunForm(BaseCommandForm):
     def _on_inputs_changed(self) -> None:
         self._invalidate_validation()
         self._update_action_logging_env()
+        self._update_timing_logging_env()
         self._update_preview()
         self.values_changed.emit()
 
@@ -428,6 +466,24 @@ class RunForm(BaseCommandForm):
         else:
             os.environ.pop("UIAUTO_ACTION_LOGGING", None)
             os.environ.pop("UIAUTO_ACTION_LOG_FILE", None)
+
+    def _on_timing_logging_toggled(self) -> None:
+        self._update_timing_logging_env()
+
+    def _update_timing_logging_env(self) -> None:
+        if not hasattr(self, "_timing_logging_cb"):
+            return
+        if self._timing_logging_cb.isChecked():
+            os.environ["UIAUTO_TIMING_LOGGING"] = "1"
+            report_path = self._report_path.value() if hasattr(self, "_report_path") else ""
+            if report_path:
+                report_path = str(Path(report_path))
+                os.environ["UIAUTO_TIMING_LOG_FILE"] = f"{report_path}.timing.log"
+            else:
+                os.environ["UIAUTO_TIMING_LOG_FILE"] = "timing.log"
+        else:
+            os.environ.pop("UIAUTO_TIMING_LOGGING", None)
+            os.environ.pop("UIAUTO_TIMING_LOG_FILE", None)
 
     def _on_scenario_path_changed(self, text: str) -> None:
         if self._updating_mode:

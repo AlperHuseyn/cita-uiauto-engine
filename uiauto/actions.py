@@ -5,10 +5,12 @@
 """
 
 from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
 from pywinauto.keyboard import send_keys
 
+from .config import TimeConfig
 from .context import ActionContextManager, tracked_action
 from .exceptions import ActionError
 from .resolver import Resolver
@@ -122,7 +124,7 @@ class Actions:
                 
                 # Brief pause to ensure focus
                 import time
-                time.sleep(0.1)
+                time.sleep(TimeConfig.current().after_click_pause)
                 
                 el.set_text(text, clear_first=clear)
                 
@@ -156,7 +158,9 @@ class Actions:
         overrides: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Wait for any of the specified elements to appear."""
-        effective_timeout = timeout if timeout is not None else self.resolver.timeout
+        config = TimeConfig.current().wait_for_any
+        effective_timeout = timeout if timeout is not None else config.timeout
+        effective_interval = config.interval
         
         predicates = [
             lambda name=name: self.resolver.exists(name, timeout=0, overrides=overrides)
@@ -167,7 +171,7 @@ class Actions:
             result_index = wait_for_any(
                 predicates,
                 timeout=effective_timeout,
-                interval=self.resolver.interval,
+                interval=effective_interval,
                 descriptions=elements
             )
             return elements[result_index]
@@ -262,7 +266,7 @@ class Actions:
         """Send global hotkey."""
         with ActionContextManager.action("hotkey", metadata={"keys": keys}):
             try:
-                send_keys(keys, pause=0.05)
+                send_keys(keys, pause=TimeConfig.current().hotkey_pause)
             except Exception as e:
                 raise ActionError("hotkey", details=f"keys={keys}", cause=e) from e
 
@@ -344,10 +348,11 @@ class Actions:
             if item_element:
                 el.click()
                 import time
-                time.sleep(0.2)
+                time.sleep(TimeConfig.current().combo_open_pause)
                 item = self.resolver.resolve(item_element, overrides=overrides)
                 item.wait("visible")
                 item.click()
+                time.sleep(TimeConfig.current().combo_select_pause)
                 return
 
             # Try 2: Standard pywinauto select()
@@ -359,8 +364,8 @@ class Actions:
                 try:
                     el.click()  # Open dropdown
                     import time
-                    time.sleep(0.2)
-                    
+                    time.sleep(TimeConfig.current().combo_open_pause)
+                        
                     # Try to find the item by option text
                     item = self.resolver.resolve(
                         option.lower(),  # Assumes element name matches option
@@ -368,6 +373,7 @@ class Actions:
                     )
                     item.wait("visible")
                     item.click()
+                    time.sleep(TimeConfig.current().combo_select_pause)
                     return
                 except Exception:
                     # Re-raise original error if fallback also fails
@@ -399,11 +405,12 @@ class Actions:
             combo.click()
             
             import time
-            time.sleep(0.2)
+            time.sleep(TimeConfig.current().combo_open_pause)
             
             item = self.resolver.resolve(item_element, overrides=overrides)
             item.wait("visible")
             item.click()
+            time.sleep(TimeConfig.current().combo_select_pause)
             
         except ActionError:
             raise
@@ -461,9 +468,10 @@ class Actions:
         overrides: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Click an element if it exists, otherwise continue."""
+        effective_timeout = timeout if timeout is not None else TimeConfig.current().exists_wait.timeout
         try:
-            el = self.resolver.resolve(element, overrides=overrides, timeout=timeout)
-            el.wait("enabled", timeout=timeout)
+            el = self.resolver.resolve(element, overrides=overrides, timeout=effective_timeout)
+            el.wait("enabled", timeout=effective_timeout)
             el.click()
             return True
         except Exception:

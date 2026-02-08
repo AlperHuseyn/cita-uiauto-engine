@@ -69,6 +69,47 @@ See [INSPECTING.md](INSPECTING.md) for details on the inspect feature.
 See [RECORDING.md](RECORDING.md) for details on the recording feature.  
 See [GUI.md](GUI.md) for details on the desktop GUI application.
 
+## Timings & TimeConfig
+
+The engine exposes action-specific timing parameters via `TimeConfig` and
+`Timings`. Presets are available for **default**, **fast**, **slow**, and **ci**.
+
+**Override precedence (lowest → highest):**
+
+1. Code defaults (Timings.default)
+2. Preset selection (fast/slow/ci)
+3. CLI overrides (e.g., `--timeout`, `--fast`, `--ci`)
+4. `elements.yaml` app timings overrides
+5. Context manager overrides (`TimeConfig.override(...)`)
+
+**Elements.yaml example:**
+
+```yaml
+app:
+  timings:
+    element_wait_timeout: 12
+    after_click_wait: 0.05
+    window_find_timeout: 5.0
+    after_sendkeys_key_wait: 0.02
+```
+
+**Python usage:**
+
+```python
+from uiauto.config import TimeConfig
+
+TimeConfig.apply_preset("slow")
+with TimeConfig.override():
+    # thread-local overrides
+    pass
+```
+
+**Reference-style keys:** The timings layer accepts pywinauto-style keys such as
+`window_find_timeout`, `window_find_retry`, `after_sendkeys_key_wait`, and
+`after_comboboxselect_wait`. These are kept in sync with engine-specific aliases
+(`window_wait_*`, `resolve_window_*`, `send_keys_pause`, `after_select_wait`,
+`exists_interval`) to preserve backward compatibility.
+
 ## Project Structure
 
 ```

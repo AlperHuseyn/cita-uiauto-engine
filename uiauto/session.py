@@ -1,13 +1,15 @@
 # uiauto/session.py
 from __future__ import annotations
+
+import logging
 import os
 import time
-import logging
 from typing import Any, Dict, Optional
 
-from pywinauto.application import Application
 from pywinauto import Desktop
+from pywinauto.application import Application
 
+from .config import TimeConfig
 from .waits import wait_until
 
 
@@ -102,8 +104,15 @@ class Session:
             except Exception:
                 return True
 
+        config = TimeConfig.current().window_close
+        effective_timeout = timeout if timeout is not None else config.timeout
         try:
-            wait_until(_no_windows, timeout=timeout, interval=self.polling_interval, description="windows to close")
+            wait_until(
+                _no_windows,
+                timeout=effective_timeout,
+                interval=config.interval,
+                description="windows to close",
+            )
         except Exception:
             # best effort
             pass

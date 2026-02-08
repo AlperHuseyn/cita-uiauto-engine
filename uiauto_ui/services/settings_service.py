@@ -52,6 +52,7 @@ class SettingsService:
     KEY_THEME = "ui/theme"
     KEY_SCENARIO_MODE = "ui/scenario_mode"
     KEY_ACTION_LOGGING = "ui/action_logging"
+    KEY_TIMING_LOGGING = "ui/timing_logging"
     
     MAX_RECENT_FILES = 10
     
@@ -232,6 +233,12 @@ class SettingsService:
     def load_action_logging_enabled(self) -> bool:
         return bool(self._settings.value(self.KEY_ACTION_LOGGING, False))
     
+    def save_timing_logging_enabled(self, enabled: bool) -> None:
+        self._settings.setValue(self.KEY_TIMING_LOGGING, enabled)
+
+    def load_timing_logging_enabled(self) -> bool:
+        return bool(self._settings.value(self.KEY_TIMING_LOGGING, False))
+        
     # -------------------------------------------------------------------------
     # Utilities
     # -------------------------------------------------------------------------

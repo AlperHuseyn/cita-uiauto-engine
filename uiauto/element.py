@@ -116,27 +116,37 @@ class Element:
         @param timeout Override timeout
         @return self for chaining
         """
-        effective_timeout = timeout if timeout is not None else self._default_timeout
+        if state == "exists":
+            config = TimeConfig.current().element_wait
+        elif state == "visible":
+            config = TimeConfig.current().visibility_wait
+        elif state == "enabled":
+            config = TimeConfig.current().enabled_wait
+        else:
+            raise ValueError(f"Unknown state: {state}. Use 'exists', 'visible', or 'enabled'")
+
+        effective_timeout = timeout if timeout is not None else config.timeout
+        effective_interval = config.interval
         
         if state == "exists":
             wait_until(
                 self.exists,
                 timeout=effective_timeout,
-                interval=self._polling_interval,
+                interval=effective_interval,
                 description=f"element '{self._meta.name}' to exist"
             )
         elif state == "visible":
             wait_until(
                 lambda: self.exists() and self.is_visible(),
                 timeout=effective_timeout,
-                interval=self._polling_interval,
+                interval=effective_interval,
                 description=f"element '{self._meta.name}' to be visible"
             )
         elif state == "enabled":
             wait_until(
                 lambda: self.exists() and self.is_visible() and self.is_enabled(),
                 timeout=effective_timeout,
-                interval=self._polling_interval,
+                interval=effective_interval,
                 description=f"element '{self._meta.name}' to be enabled"
             )
         else:
@@ -187,7 +197,7 @@ class Element:
             else:
                 self._handle.click_input()
                 import time
-                time.sleep(0.05)
+                time.sleep(TimeConfig.current().after_double_click_pause)
                 self._handle.click_input()
         return self
     

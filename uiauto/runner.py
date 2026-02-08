@@ -17,6 +17,7 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from .actions import Actions
+from .config import TimeConfig
 from .context import ActionContextManager
 from .exceptions import UIAutoError
 from .repository import Repository
@@ -187,7 +188,7 @@ class Runner:
             
             # Best-effort close
             try:
-                sess.close_main_windows(timeout=3.0)
+                sess.close_main_windows(timeout=TimeConfig.current().window_close.timeout)
             except Exception:
                 pass
 
@@ -363,7 +364,7 @@ class Runner:
         if keyword == "click_if_exists":
             actions.click_if_exists(
                 args["element"],
-                timeout=args.get("timeout", 2.0),
+                timeout=args.get("timeout", TimeConfig.current().exists_wait.timeout),
                 overrides=args.get("overrides")
             )
             return

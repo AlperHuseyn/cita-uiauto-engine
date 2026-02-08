@@ -169,6 +169,12 @@ RUN_COMMAND = CommandSpec(
             help_text="Use fast timeout settings for local development",
             category=Category.ADVANCED,
         ),
+        ArgSpec(
+            name="slow",
+            arg_type=ArgType.BOOL, required=False, default=False,
+            help_text="Use slow timeout settings for unstable environments",
+            category=Category.ADVANCED,
+        ),
     ]
 )
 

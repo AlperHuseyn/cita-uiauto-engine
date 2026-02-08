@@ -31,6 +31,8 @@ from .config import (
     TimeoutSettings,
     configure_for_ci,
     configure_for_local_dev,
+    configure_for_slow,
+    available_presets,
 )
 
 # Context tracking
@@ -80,7 +82,8 @@ __all__ = [
     "TimeoutSettings",
     "configure_for_ci",
     "configure_for_local_dev",
-    # Context
+    "configure_for_slow",
+    "available_presets",
     "ActionContext",
     "ActionContextManager",
     "tracked_action",
