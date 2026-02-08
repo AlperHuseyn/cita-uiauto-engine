@@ -11,11 +11,9 @@ import time
 import traceback
 from typing import Any, Dict, Optional
 
-from .loghub import LOG_HUB
-
 
 class ActionLogger:
-    """Thread-safe action logger with console/file output and log hub publishing."""
+    """Thread-safe action logger with console/file output."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -102,8 +100,6 @@ class ActionLogger:
 
         if self._file_path:
             self._write_file(line)
-
-        LOG_HUB.publish(self._run_id, {"line": line, "event": event})
 
     def _write_file(self, line: str) -> None:
         try:
