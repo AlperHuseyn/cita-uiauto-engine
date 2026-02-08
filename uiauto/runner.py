@@ -5,22 +5,23 @@
 """
 
 from __future__ import annotations
+
 import json
 import os
 import re
 import time
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 import yaml
 from jsonschema import Draft202012Validator
 
-from .repository import Repository
-from .session import Session
-from .resolver import Resolver
 from .actions import Actions
 from .context import ActionContextManager
 from .exceptions import UIAutoError
-
+from .repository import Repository
+from .resolver import Resolver
+from .session import Session
 
 _VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -88,6 +89,8 @@ class Runner:
         report_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run a scenario file."""
+        from .actionlogger import ACTION_LOGGER
+
         scenario_path = os.path.abspath(scenario_path)
         scenario = self._load_yaml(scenario_path)
         self.validate(scenario)
@@ -109,7 +112,10 @@ class Runner:
         )
 
         start_ts = time.time()
+        run_id = str(uuid4())
+        ACTION_LOGGER.set_run_id(run_id)
         report: Dict[str, Any] = {
+            "run_id": run_id,
             "scenario": os.path.basename(scenario_path),
             "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "status": "unknown",

@@ -55,4 +55,5 @@ Thumbs.db
 /object_maps
 
 # scenarios
-/scenarios
+scenarios/
+scenarios/todo-app.yaml

@@ -4,17 +4,18 @@ Form for 'uiauto run' command.
 Executes YAML scenarios using element maps.
 """
 
-from typing import Dict, Any, Optional
+import os
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QGroupBox, QCheckBox, QDoubleSpinBox, QPushButton,
-    QLabel, QRadioButton, QButtonGroup, QMessageBox
-)
+from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QDoubleSpinBox,
+                               QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+                               QMessageBox, QPushButton, QRadioButton,
+                               QVBoxLayout, QWidget)
 
-from .base_form import BaseCommandForm
-from ..widgets.path_selector import PathSelector
 from ..widgets.key_value_table import KeyValueTable
+from ..widgets.path_selector import PathSelector
+from .base_form import BaseCommandForm
 
 
 class RunForm(BaseCommandForm):
@@ -126,6 +127,12 @@ class RunForm(BaseCommandForm):
         self._verbose_cb.stateChanged.connect(self._on_inputs_changed)
         self._register_widget("verbose", self._verbose_cb)
         options_layout.addRow("", self._verbose_cb)
+
+        self._action_logging_cb = QCheckBox("Live Action Logging")
+        self._action_logging_cb.setToolTip("Stream action logs during scenario execution")
+        self._action_logging_cb.stateChanged.connect(self._on_action_logging_toggled)
+        self._register_widget("action-logging", self._action_logging_cb)
+        options_layout.addRow("", self._action_logging_cb)
         
         self._main_layout.addWidget(options_group)
         
@@ -327,12 +334,16 @@ class RunForm(BaseCommandForm):
         report = settings_service.load_last_report()
         if report:
             self._report_path.set_value(report)
+
+        if settings_service.load_action_logging_enabled():
+            self._action_logging_cb.setChecked(True)
         
         app = settings_service.load_last_app()
         if app:
             self._app_path.set_value(app)
 
         self._invalidate_validation()
+        self._update_action_logging_env()
         self._update_preview()
     
     def save_last_paths(self, settings_service) -> None:
@@ -354,6 +365,8 @@ class RunForm(BaseCommandForm):
         report = self._report_path.value()
         if report:
             settings_service.save_last_report(report)
+        
+        settings_service.save_action_logging_enabled(self._action_logging_cb.isChecked())
         
         app = self._app_path.value()
         if app:
@@ -394,8 +407,27 @@ class RunForm(BaseCommandForm):
 
     def _on_inputs_changed(self) -> None:
         self._invalidate_validation()
+        self._update_action_logging_env()
         self._update_preview()
         self.values_changed.emit()
+
+    def _on_action_logging_toggled(self) -> None:
+        self._update_action_logging_env()
+
+    def _update_action_logging_env(self) -> None:
+        if not hasattr(self, "_action_logging_cb"):
+            return
+        if self._action_logging_cb.isChecked():
+            os.environ["UIAUTO_ACTION_LOGGING"] = "1"
+            report_path = self._report_path.value() if hasattr(self, "_report_path") else ""
+            if report_path:
+                report_path = str(Path(report_path))
+                os.environ["UIAUTO_ACTION_LOG_FILE"] = f"{report_path}.actions.log"
+            else:
+                os.environ["UIAUTO_ACTION_LOG_FILE"] = "actions.log"
+        else:
+            os.environ.pop("UIAUTO_ACTION_LOGGING", None)
+            os.environ.pop("UIAUTO_ACTION_LOG_FILE", None)
 
     def _on_scenario_path_changed(self, text: str) -> None:
         if self._updating_mode:

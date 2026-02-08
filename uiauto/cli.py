@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .actionlogger import ACTION_LOGGER
 from .config import (TimeConfig, TimeoutSettings, configure_for_ci,
                      configure_for_local_dev)
 from .context import ActionContextManager
@@ -46,9 +47,107 @@ def _apply_timeout_config(args: argparse.Namespace) -> None:
         config.enabled_wait = TimeoutSettings(timeout=timeout / 2, interval=0.2)
 
 
+def _resolve_scenario_paths(
+    single_scenario: Optional[str],
+    scenarios_dir: Optional[str],
+    elements_path: Optional[str],
+) -> List[str]:
+    """Resolve scenarios for single or bulk execution."""
+    if single_scenario:
+        return [os.path.abspath(single_scenario)]
+    if not scenarios_dir:
+        return []
+
+    base = Path(scenarios_dir).resolve()
+    if not base.exists() or not base.is_dir():
+        return []
+
+    scenario_files = list(base.rglob("*.yaml")) + list(base.rglob("*.yml"))
+    elements_abs = os.path.abspath(elements_path) if elements_path else None
+    unique = sorted({str(path.resolve()) for path in scenario_files})
+    if elements_abs:
+        unique = [path for path in unique if os.path.abspath(path) != elements_abs]
+    return unique
+
+
+def _build_report_path(base_report_path: str, scenario_path: str, index: int, bulk_mode: bool) -> str:
+    """Build report path while preserving existing single-scenario behavior."""
+    if not bulk_mode:
+        return base_report_path
+
+    base = Path(base_report_path)
+    stem = base.stem
+    suffix = base.suffix or ".json"
+    scenario_stem = Path(scenario_path).stem
+    filename = f"{stem}__{index:03d}_{scenario_stem}{suffix}"
+    return str((base.parent / filename).resolve())
+
+
+def _print_bulk_summary(results: List[Dict[str, Any]]) -> None:
+    """Print compact summary of all scenarios in bulk mode."""
+    print("\nBulk Summary")
+    print("-" * 80)
+    print(f"{'#':<4} {'Status':<8} {'Duration':<10} Scenario (Report)")
+    for idx, result in enumerate(results, start=1):
+        status = str(result.get("status", "unknown")).upper()
+        duration = float(result.get("duration_sec", 0))
+        scenario_path = str(result.get("scenario_path", ""))
+        report_path = str(result.get("report_path", ""))
+        print(f"{idx:<4} {status:<8} {duration:<10.2f} {scenario_path} ({report_path})")
+    summary = _build_combined_summary(results)
+    print("-" * 80)
+    print(
+        f"Total: {summary['total']}  Passed: {summary['passed']}  "
+        f"Failed: {summary['failed']}  Exit code: {0 if summary['failed'] == 0 else 2}"
+    )
+
+
+def _build_combined_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build machine-readable combined summary."""
+    passed = sum(1 for item in results if item.get("status") == "passed")
+    failed = sum(1 for item in results if item.get("status") != "passed")
+    return {
+        "total": len(results),
+        "passed": passed,
+        "failed": failed,
+        "status": "passed" if failed == 0 else "failed",
+        "results": results,
+    }
+
+
+def _print_validation_summary(results: List[Dict[str, Any]]) -> None:
+    """Print summary for bulk validation."""
+    print("\nValidation Summary")
+    print("-" * 80)
+    print(f"{'#':<4} {'Status':<8} Scenario")
+    for idx, result in enumerate(results, start=1):
+        status = str(result.get("status", "unknown")).upper()
+        scenario_path = str(result.get("scenario_path", ""))
+        print(f"{idx:<4} {status:<8} {scenario_path}")
+    total = len(results)
+    invalid = sum(1 for item in results if item.get("status") != "valid")
+    valid = total - invalid
+    print("-" * 80)
+    print(f"Total: {total}  Valid: {valid}  Invalid: {invalid}")
+
+
+def _configure_action_logger_from_env() -> None:
+    """Configure action logging from environment variables."""
+    enabled = os.getenv("UIAUTO_ACTION_LOGGING", "").lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        ACTION_LOGGER.disable()
+        return
+
+    log_file = os.getenv("UIAUTO_ACTION_LOG_FILE")
+    level = os.getenv("UIAUTO_ACTION_LOG_LEVEL", "INFO")
+    ACTION_LOGGER.configure(console=True, file_path=log_file, level=level)
+    ACTION_LOGGER.enable()
+    
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
     argv = argv or sys.argv[1:]
+    _configure_action_logger_from_env()
     p = argparse.ArgumentParser(
         prog="uiauto",
         description="cita-uiauto-engine - Windows UI automation framework"
@@ -342,8 +441,6 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         return 2 if errors else 0
         
-        return 1 if errors else 0
-
     if args.cmd == "list-elements":
         try:
             repo = Repository(args.elements)
@@ -375,89 +472,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     return 1
-
-def _resolve_scenario_paths(
-    single_scenario: Optional[str],
-    scenarios_dir: Optional[str],
-    elements_path: Optional[str],
-) -> List[str]:
-    """Resolve scenarios for single or bulk execution."""
-    if single_scenario:
-        return [os.path.abspath(single_scenario)]
-    if not scenarios_dir:
-        return []
-
-    base = Path(scenarios_dir).resolve()
-    if not base.exists() or not base.is_dir():
-        return []
-
-    scenario_files = list(base.rglob("*.yaml")) + list(base.rglob("*.yml"))
-    elements_abs = os.path.abspath(elements_path) if elements_path else None
-    unique = sorted({str(path.resolve()) for path in scenario_files})
-    if elements_abs:
-        unique = [path for path in unique if os.path.abspath(path) != elements_abs]
-    return unique
-
-
-def _build_report_path(base_report_path: str, scenario_path: str, index: int, bulk_mode: bool) -> str:
-    """Build report path while preserving existing single-scenario behavior."""
-    if not bulk_mode:
-        return base_report_path
-
-    base = Path(base_report_path)
-    stem = base.stem
-    suffix = base.suffix or ".json"
-    scenario_stem = Path(scenario_path).stem
-    filename = f"{stem}__{index:03d}_{scenario_stem}{suffix}"
-    return str((base.parent / filename).resolve())
-
-
-def _print_bulk_summary(results: List[Dict[str, Any]]) -> None:
-    """Print compact summary of all scenarios in bulk mode."""
-    print("\nBulk Summary")
-    print("-" * 80)
-    print(f"{'#':<4} {'Status':<8} {'Duration':<10} Scenario (Report)")
-    for idx, result in enumerate(results, start=1):
-        status = str(result.get("status", "unknown")).upper()
-        duration = float(result.get("duration_sec", 0))
-        scenario_path = str(result.get("scenario_path", ""))
-        report_path = str(result.get("report_path", ""))
-        print(f"{idx:<4} {status:<8} {duration:<10.2f} {scenario_path} ({report_path})")
-    summary = _build_combined_summary(results)
-    print("-" * 80)
-    print(
-        f"Total: {summary['total']}  Passed: {summary['passed']}  "
-        f"Failed: {summary['failed']}  Exit code: {0 if summary['failed'] == 0 else 2}"
-    )
-
-
-def _build_combined_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Build machine-readable combined summary."""
-    passed = sum(1 for item in results if item.get("status") == "passed")
-    failed = sum(1 for item in results if item.get("status") != "passed")
-    return {
-        "total": len(results),
-        "passed": passed,
-        "failed": failed,
-        "status": "passed" if failed == 0 else "failed",
-        "results": results,
-    }
-
-
-def _print_validation_summary(results: List[Dict[str, Any]]) -> None:
-    """Print summary for bulk validation."""
-    print("\nValidation Summary")
-    print("-" * 80)
-    print(f"{'#':<4} {'Status':<8} Scenario")
-    for idx, result in enumerate(results, start=1):
-        status = str(result.get("status", "unknown")).upper()
-        scenario_path = str(result.get("scenario_path", ""))
-        print(f"{idx:<4} {status:<8} {scenario_path}")
-    total = len(results)
-    invalid = sum(1 for item in results if item.get("status") != "valid")
-    valid = total - invalid
-    print("-" * 80)
-    print(f"Total: {total}  Valid: {valid}  Invalid: {invalid}")
 
 
 if __name__ == "__main__":

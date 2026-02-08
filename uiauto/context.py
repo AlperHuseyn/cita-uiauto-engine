@@ -143,14 +143,38 @@ def tracked_action(action_name: Optional[str] = None):
         name = action_name or func.__name__
         
         def wrapper(*args, **kwargs):
+            from .actionlogger import ACTION_LOGGER
+
             element_name = kwargs.get('element_name') or kwargs.get('element') or kwargs.get('name')
             if element_name is None and len(args) > 1:
                 candidate = args[1]
                 if isinstance(candidate, str):
                     element_name = candidate
             
+            start_time = time.time()
             with ActionContextManager.action(name, element_name=element_name):
-                return func(*args, **kwargs)
+                try:
+                    result = func(*args, **kwargs)
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    ACTION_LOGGER.log(
+                        action=name,
+                        element=element_name,
+                        status="ok",
+                        duration_ms=duration_ms,
+                        metadata=kwargs,
+                    )
+                    return result
+                except Exception as exc:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    ACTION_LOGGER.log(
+                        action=name,
+                        element=element_name,
+                        status="error",
+                        duration_ms=duration_ms,
+                        metadata=kwargs,
+                        exception=exc,
+                    )
+                    raise
         
         wrapper.__name__ = func.__name__
         wrapper.__doc__ = func.__doc__

@@ -51,6 +51,7 @@ class SettingsService:
     KEY_CI_MODE_DEFAULT = "ui/ci_mode_default"
     KEY_THEME = "ui/theme"
     KEY_SCENARIO_MODE = "ui/scenario_mode"
+    KEY_ACTION_LOGGING = "ui/action_logging"
     
     MAX_RECENT_FILES = 10
     
@@ -224,6 +225,12 @@ class SettingsService:
 
     def load_last_scenario_mode(self) -> str:
         return str(self._settings.value(self.KEY_SCENARIO_MODE, "single"))
+    
+    def save_action_logging_enabled(self, enabled: bool) -> None:
+        self._settings.setValue(self.KEY_ACTION_LOGGING, enabled)
+
+    def load_action_logging_enabled(self) -> bool:
+        return bool(self._settings.value(self.KEY_ACTION_LOGGING, False))
     
     # -------------------------------------------------------------------------
     # Utilities
