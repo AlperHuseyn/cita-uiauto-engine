@@ -193,6 +193,12 @@ WM_HOTKEY = 0x0312
 MAX_PARENT_WALK_DEPTH = 5
 
 
+def _print(*args, **kwargs):
+    """Print with immediate flush for live output streaming."""
+    kwargs.setdefault("flush", True)
+    print(*args, **kwargs)
+
+
 def _get_stop_hotkey_modifiers() -> int:
     """Get Windows modifier flags for stop hotkey."""
     mods = 0
@@ -370,14 +376,14 @@ class Recorder:
             try:
                 SetProcessDPIAware()
                 if self.debug_json_out: 
-                    print("  Debug: DPI awareness enabled")
+                    _print("  Debug: DPI awareness enabled")
             except Exception as e:
                 if self.debug_json_out:
-                    print(f"  Debug: Failed to enable DPI awareness: {e}")
+                    _print(f"  Debug: Failed to enable DPI awareness: {e}")
         
         stop_hotkey_str = _get_stop_hotkey_display()
-        print("🎬 Recording started.  Interact with the application.")
-        print(f"   Press {stop_hotkey_str} to stop recording (or Ctrl+C in console).")
+        _print("🎬 Recording started.  Interact with the application.")
+        _print(f"   Press {stop_hotkey_str} to stop recording (or Ctrl+C in console).")
         self._recording = True
         self._stopping = False
         self._stop_requested = False
@@ -407,7 +413,7 @@ class Recorder:
         if not self._recording:
             return
         
-        print("⏹️  Stopping recording...")
+        _print("⏹️  Stopping recording...")
         self._stopping = True
         self._recording = False
         self._stop_event.set()
@@ -431,7 +437,7 @@ class Recorder:
                 except Exception:
                     pass
         
-        print(f"✅ Recording stopped.  Captured {len(self. steps)} steps.")
+        _print(f"✅ Recording stopped.  Captured {len(self. steps)} steps.")
 
     def _remove_stop_hotkey_from_steps(self) -> None:
         """Remove any stop hotkey steps that were accidentally recorded."""
@@ -529,9 +535,9 @@ class Recorder:
                     existing = yaml.safe_load(f) or {}
                 existing_steps = existing.get("steps", [])
                 if existing_steps: 
-                    print(f"  📎 Merging with existing scenario ({len(existing_steps)} existing steps)")
+                    _print(f"  📎 Merging with existing scenario ({len(existing_steps)} existing steps)")
             except Exception as e: 
-                print(f"  ⚠️ Could not read existing scenario: {e}")
+                _print(f"  ⚠️ Could not read existing scenario: {e}")
                 existing_steps = []
         
         # Combine existing + new steps
@@ -544,8 +550,8 @@ class Recorder:
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(fixed_yaml)
         
-        print(f"📝 Scenario saved to:  {out_path}")
-        print(f"    Total steps: {len(all_steps)} ({len(existing_steps)} existing + {len(self. steps)} new)")
+        _print(f"📝 Scenario saved to:  {out_path}")
+        _print(f"    Total steps: {len(all_steps)} ({len(existing_steps)} existing + {len(self. steps)} new)")
         return out_path
 
     def save_elements(self) -> str:
@@ -596,10 +602,10 @@ class Recorder:
         with open(self.elements_yaml_path, "w", encoding="utf-8") as f:
             f.write(fixed_yaml)
         
-        print(f"🗺️  Elements saved to:  {self.elements_yaml_path}")
-        print(f"    Added/updated {len(self.elements_cache)} elements")
+        _print(f"🗺️  Elements saved to:  {self.elements_yaml_path}")
+        _print(f"    Added/updated {len(self.elements_cache)} elements")
         if self.merge:
-            print(f"    (merged with existing elements)")
+            _print(f"    (merged with existing elements)")
         return self.elements_yaml_path
 
     def save_debug_snapshots(self) -> Optional[str]:
@@ -613,7 +619,7 @@ class Recorder:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(self.debug_snapshots, f, indent=2, ensure_ascii=False)
         
-        print(f"🐛 Debug snapshots saved to: {out_path}")
+        _print(f"🐛 Debug snapshots saved to: {out_path}")
         return out_path
 
     # =========================================================
@@ -635,10 +641,10 @@ class Recorder:
                         0, 0, 0, 0, HWND_MESSAGE, None, hinstance, None
                     )
                     if hwnd and self. debug_json_out:
-                        print(f"  Debug:  Created message-only window (HWND: {hwnd})")
+                        _print(f"  Debug:  Created message-only window (HWND: {hwnd})")
                 except Exception as e:
                     if self.debug_json_out:
-                        print(f"  Debug: Failed to create message window: {e}")
+                        _print(f"  Debug: Failed to create message window: {e}")
                     hwnd = None
             
             hotkey_mods = _get_stop_hotkey_modifiers()
@@ -649,11 +655,11 @@ class Recorder:
             
             if not success:
                 if self.debug_json_out:
-                    print("  Debug: Failed to register stop hotkey")
+                    _print("  Debug: Failed to register stop hotkey")
                 return
             
             if self.debug_json_out:
-                print(f"  Debug: Native stop hotkey registered ({hotkey_str})")
+                _print(f"  Debug: Native stop hotkey registered ({hotkey_str})")
             
             msg = wintypes.MSG()
             while self._recording and not self._stop_event.is_set():
@@ -661,7 +667,7 @@ class Recorder:
                     if msg.message == WM_HOTKEY and msg.wParam == self._stop_hotkey_id: 
                         self._stop_hotkey_pressed = True
                         self._pending_stop_hotkey = True
-                        print(f"\n  🛑 Stop hotkey detected ({hotkey_str})")
+                        _print(f"\n  🛑 Stop hotkey detected ({hotkey_str})")
                         self._stop_requested = True
                         self._stopping = True
                         self. stop()
@@ -674,7 +680,7 @@ class Recorder:
         
         except Exception as e:
             if self.debug_json_out:
-                print(f"  Debug:  Hotkey listener error:  {e}")
+                _print(f"  Debug:  Hotkey listener error:  {e}")
         
         finally:
             if WINDOWS_API_AVAILABLE and UnregisterHotKey:
@@ -686,7 +692,7 @@ class Recorder:
                 try:
                     DestroyWindow(hwnd)
                     if self.debug_json_out: 
-                        print("  Debug:  Destroyed message window")
+                        _print("  Debug:  Destroyed message window")
                 except Exception: 
                     pass
 
@@ -713,8 +719,8 @@ class Recorder:
             
             if not element_info: 
                 if self.debug_json_out: 
-                    print(f"  Debug:  Click at ({x}, {y}): Could not identify element")
-                print(f"  ⚠️  Click:  Could not identify element at ({x}, {y})")
+                    _print(f"  Debug:  Click at ({x}, {y}): Could not identify element")
+                _print(f"  ⚠️  Click:  Could not identify element at ({x}, {y})")
                 return
             
             elem_key = self._ensure_element(element_info)
@@ -725,12 +731,12 @@ class Recorder:
             self. steps.append({"click": {"element": elem_key}})
             self._last_action_time = time.time()
             
-            print(f"  🖱️  Click: {elem_key}")
+            _print(f"  🖱️  Click: {elem_key}")
             
         except Exception as e: 
             if self.debug_json_out: 
-                print(f"  Debug: Failed to capture click: {type(e).__name__}: {e}")
-            print(f"  ⚠️  Failed to capture click: {e}")
+                _print(f"  Debug: Failed to capture click: {type(e).__name__}: {e}")
+            _print(f"  ⚠️  Failed to capture click: {e}")
 
     def _on_key_press(self, key) -> None:
         """Handle key press events."""
@@ -773,7 +779,7 @@ class Recorder:
                     self._flush_typing()
                     self. steps.append({"hotkey": {"keys": hotkey_str}})
                     self._last_action_time = time.time()
-                    print(f"  ⌨️  Hotkey: {hotkey_str}")
+                    _print(f"  ⌨️  Hotkey: {hotkey_str}")
                     return
             
             # Handle special keys (backspace, enter, etc.)
@@ -788,7 +794,7 @@ class Recorder:
         
         except Exception as e:
             if self.debug_json_out:
-                print(f"  Debug: Failed to capture key press: {type(e).__name__}: {e}")
+                _print(f"  Debug: Failed to capture key press: {type(e).__name__}: {e}")
 
     def _on_key_release(self, key) -> None:
         """Handle key release events (for modifier tracking)."""
@@ -849,11 +855,11 @@ class Recorder:
             if not element_info and self._last_clicked_element_info:
                 element_info = self._last_clicked_element_info
                 if self. debug_json_out:
-                    print("  Debug: Using last clicked element as typing target")
+                    _print("  Debug: Using last clicked element as typing target")
             
             if not element_info: 
                 if self.debug_json_out: 
-                    print(f"  Debug:  Typing '{char}' but could not identify focused element")
+                    _print(f"  Debug:  Typing '{char}' but could not identify focused element")
                 return
             
             elem_key = self._ensure_element(element_info)
@@ -868,7 +874,7 @@ class Recorder:
             
         except Exception as e: 
             if self. debug_json_out:
-                print(f"  Debug:  Failed to capture typing:  {type(e).__name__}: {e}")
+                _print(f"  Debug:  Failed to capture typing:  {type(e).__name__}: {e}")
 
     def _handle_special_key(self, key_name: str) -> None:
         """Handle special keys like backspace, enter, etc."""
@@ -883,7 +889,7 @@ class Recorder:
             
             if not element_info:
                 if self.debug_json_out: 
-                    print(f"  Debug: Special key '{key_name}' but could not identify focused element")
+                    _print(f"  Debug: Special key '{key_name}' but could not identify focused element")
                 return
             
             elem_key = self._ensure_element(element_info)
@@ -898,11 +904,11 @@ class Recorder:
                 self._last_action_time = time.time()
             
             if self.debug_json_out:
-                print(f"  Debug: Special key:  {key_name} -> {special_key_str}")
+                _print(f"  Debug: Special key:  {key_name} -> {special_key_str}")
             
         except Exception as e:
             if self.debug_json_out:
-                print(f"  Debug: Failed to handle special key: {type(e).__name__}: {e}")
+                _print(f"  Debug: Failed to handle special key: {type(e).__name__}: {e}")
 
     def _flush_typing(self) -> None:
         """Flush accumulated typing buffer into a single type step (thread-safe)."""
@@ -922,7 +928,7 @@ class Recorder:
             }
         })
         
-        print(f"  ⌨️  Type: {self._typing_element_key} = '{text}'")
+        _print(f"  ⌨️  Type: {self._typing_element_key} = '{text}'")
         
         self._typing_buffer. clear()
         self._typing_element_key = None
@@ -970,7 +976,7 @@ class Recorder:
             
         except Exception as e:
             if self.debug_json_out:
-                print(f"  Debug: Failed to capture focused element: {type(e).__name__}: {e}")
+                _print(f"  Debug: Failed to capture focused element: {type(e).__name__}: {e}")
             return None
 
     def _capture_element_at_point(self, x: int, y:  int) -> Optional[Dict[str, Any]]:
@@ -984,7 +990,7 @@ class Recorder:
                 rect = target_window. rectangle()
                 if not (rect. left <= x <= rect.right and rect. top <= y <= rect.bottom):
                     if self.debug_json_out:
-                        print(f"  Debug: Click at ({x}, {y}) outside target window bounds")
+                        _print(f"  Debug: Click at ({x}, {y}) outside target window bounds")
                     return None
             except Exception:
                 pass
@@ -995,7 +1001,7 @@ class Recorder:
                 element = desktop.from_point(x, y)
             except Exception as e:
                 if self.debug_json_out:
-                    print(f"  Debug: from_point failed: {type(e).__name__}: {e}")
+                    _print(f"  Debug: from_point failed: {type(e).__name__}: {e}")
             
             if element is None:
                 element = self._find_element_at_point_in_descendants(target_window, x, y)
@@ -1020,7 +1026,7 @@ class Recorder:
             
         except Exception as e:
             if self.debug_json_out:
-                print(f"  Debug: Failed to capture element at point: {type(e).__name__}: {e}")
+                _print(f"  Debug: Failed to capture element at point: {type(e).__name__}: {e}")
             return None
 
     def _find_element_at_point_in_descendants(self, window, x:  int, y: int):
@@ -1210,7 +1216,7 @@ def record_session(
     try:
         recorder. start()
         
-        print(f"\n  Press {stop_hotkey_str} to stop recording (or Ctrl+C in console)...\n")
+        _print(f"\n  Press {stop_hotkey_str} to stop recording (or Ctrl+C in console)...\n")
         while recorder._recording:
             time.sleep(0.5)
         
@@ -1218,7 +1224,7 @@ def record_session(
             time.sleep(0.5)
     
     except KeyboardInterrupt: 
-        print("\n")
+        _print("\n")
         recorder._stop_requested = True
         recorder.stop()
     
@@ -1229,6 +1235,6 @@ def record_session(
             if debug_json_out:
                 recorder.save_debug_snapshots()
         else:
-            print("⚠️  No steps recorded.")
+            _print("⚠️  No steps recorded.")
     
     return recorder
