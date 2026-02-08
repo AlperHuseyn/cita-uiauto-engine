@@ -148,6 +148,7 @@ class Actions:
         except Exception as e:
             raise ActionError("wait_for", element_name=element, cause=e) from e
 
+    @tracked_action("wait_for_any")
     def wait_for_any(
         self,
         elements: List[str],
@@ -173,6 +174,7 @@ class Actions:
         except Exception as e:
             raise ActionError("wait_for_any", details=f"elements={elements}", cause=e) from e
 
+    @tracked_action("wait_for_gone")
     def wait_for_gone(
         self,
         element: str,
@@ -255,6 +257,7 @@ class Actions:
         except Exception as e:
             raise ActionError("close_window", element_name=window_name, cause=e) from e
 
+    @tracked_action("hotkey")
     def hotkey(self, keys: str) -> None:
         """Send global hotkey."""
         with ActionContextManager.action("hotkey", metadata={"keys": keys}):
@@ -450,6 +453,7 @@ class Actions:
     
     # --- New Enhanced Methods ---
     
+    @tracked_action("click_if_exists")
     def click_if_exists(
         self,
         element: str,
@@ -465,6 +469,7 @@ class Actions:
         except Exception:
             return False
     
+    @tracked_action("get_text")
     def get_text(
         self,
         element: str,
@@ -480,6 +485,7 @@ class Actions:
         except Exception as e:
             raise ActionError("get_text", element_name=element, cause=e) from e
     
+    @tracked_action("exists")
     def exists(
         self,
         element: str,
