@@ -5,18 +5,20 @@
 """
 
 from __future__ import annotations
+
 import re
 from typing import Any, Dict, List, Optional
 
-from .repository import Repository
-from .session import Session
-from .element import Element, ElementMeta
-from .exceptions import LocatorAttempt, WindowNotFoundError, ElementNotFoundError
-from .waits import wait_until
 from .artifacts import make_artifacts
-from .context import ActionContextManager
 from .config import TimeConfig
-
+from .context import ActionContextManager
+from .element_meta import ElementMeta
+from .exceptions import (ElementNotFoundError, LocatorAttempt,
+                         WindowNotFoundError)
+from .repository import Repository
+from .resilient import ResilientElement
+from .session import Session
+from .waits import wait_until
 
 TITLEBAR_BUTTON_TITLES = {"Close", "Minimize", "Maximize"}
 
@@ -64,7 +66,7 @@ class Resolver:
         """
         self.session = session
         self.repo = repo
-        self._element_cache: Dict[str, Element] = {}
+        self._element_cache: Dict[str, ResilientElement] = {}
         self._cache_enabled: bool = True
 
     @property
@@ -164,7 +166,7 @@ class Resolver:
         overrides: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
         use_cache: bool = True,
-    ) -> Element:
+    ) -> ResilientElement:
         """
         Resolve an element by name.
         
@@ -172,7 +174,7 @@ class Resolver:
         @param overrides Optional locator overrides (highest priority)
         @param timeout Override timeout (uses default if None)
         @param use_cache Whether to use cached element if available
-        @return Element wrapper object
+        @return ResilientElement wrapper object
         @throws ElementNotFoundError if element not found within timeout
         """
         effective_timeout = timeout if timeout is not None else self.timeout
@@ -206,19 +208,24 @@ class Resolver:
             attempts: List[LocatorAttempt] = []
             last_error: Optional[str] = None
 
-            for locator in locators:
+            for i, locator in enumerate(locators):
                 try:
                     elem = self._resolve_in_window(window, locator)
                     is_name_based = _is_name_based_locator(locator)
                     meta = ElementMeta(
-                        name=element_name, 
-                        window_name=window_name, 
+                        name=element_name,
+                        window_name=window_name,
                         used_locator=locator,
-                        found_via_name=is_name_based
+                        found_via_name=is_name_based,
+                        resolution_strategy="name_descendants" if is_name_based else "child_window",
+                        attempt_index=i,
                     )
-                    
-                    wrapped = Element(
-                        elem,
+
+                    wrapped = ResilientElement(
+                        raw_element=elem,
+                        element_name=element_name,
+                        window_name=window_name,
+                        resolver=self,
                         meta=meta,
                         default_timeout=effective_timeout,
                         polling_interval=effective_interval,

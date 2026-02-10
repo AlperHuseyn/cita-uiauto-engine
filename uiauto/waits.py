@@ -369,6 +369,7 @@ def retry(
                         "elapsed_s": round(elapsed, 3),
                     },
                 )
+            return result
         except exceptions as e:
             last_exception = e
             if attempt < max_attempts:

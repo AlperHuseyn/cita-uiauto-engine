@@ -22,8 +22,11 @@ from .config import (
 )
 from .waits import TIMING_LOGGER
 from .context import ActionContextManager
-from .inspector import (emit_elements_yaml_stateful, inspect_window,
-                        write_inspect_outputs)
+from .inspector import (
+    emit_elements_yaml_stateful,
+    inspect_window,
+    write_inspect_outputs,
+)
 from .repository import Repository
 from .runner import Runner
 
@@ -38,14 +41,14 @@ except ImportError:
 
 def _apply_timeout_config(args: argparse.Namespace) -> None:
     """Apply timeout configuration based on CLI arguments."""
-    if getattr(args, 'ci', False):
+    if getattr(args, "ci", False):
         configure_for_ci()
-    elif getattr(args, 'fast', False):
+    elif getattr(args, "fast", False):
         configure_for_local_dev()
-    elif getattr(args, 'slow', False):
+    elif getattr(args, "slow", False):
         configure_for_slow()
 
-    timeout = getattr(args, 'timeout', None)
+    timeout = getattr(args, "timeout", None)
     if timeout is not None:
         TimeConfig.apply_timeout_override(timeout)
 
@@ -146,6 +149,7 @@ def _configure_action_logger_from_env() -> None:
     ACTION_LOGGER.configure(console=True, file_path=log_file, level=level)
     ACTION_LOGGER.enable()
 
+
 def _configure_timing_logger_from_env() -> None:
     """Configure timing logging from environment variables."""
     enabled = os.getenv("UIAUTO_TIMING_LOGGING", "").lower() in {"1", "true", "yes", "on"}
@@ -158,14 +162,16 @@ def _configure_timing_logger_from_env() -> None:
     TIMING_LOGGER.configure(console=True, file_path=log_file, level=level)
     TIMING_LOGGER.enable()
 
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
     argv = argv or sys.argv[1:]
     _configure_action_logger_from_env()
     _configure_timing_logger_from_env()
+
     p = argparse.ArgumentParser(
         prog="uiauto",
-        description="cita-uiauto-engine - Windows UI automation framework"
+        description="cita-uiauto-engine - Windows UI automation framework",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -234,7 +240,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # -------------------------
     # Execute commands
     # -------------------------
-    
+
     if args.cmd == "run":
         if args.scenario and args.scenarios_dir:
             print("Error: --scenario and --scenarios-dir are mutually exclusive", file=sys.stderr)
@@ -243,18 +249,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("Error: one of --scenario or --scenarios-dir is required", file=sys.stderr)
             return 1
 
-        # Apply timeout configuration
-        _apply_timeout_config(args)
-        
         # Clear any stale action context
         ActionContextManager.clear()
-        
+
         try:
             repo = Repository(args.elements)
         except Exception as e:
             print(f"Error loading elements file: {e}", file=sys.stderr)
             return 1
-        
+
+        _apply_timeout_config(args)
+
         runner = Runner(repo, schema_path=args.schema)
 
         variables: Dict[str, Any] = {}
@@ -263,7 +268,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 variables = json.load(f)
             if not isinstance(variables, dict):
                 raise ValueError("--vars must be a JSON object mapping")
-        
+
         # Parse inline variables
         if args.var:
             for var_spec in args.var:
@@ -303,18 +308,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"Duration: {report.get('duration_sec', 0):.2f}s")
 
             # Print step details if verbose or failed
-            if args.verbose or report.get('status') == 'failed':
+            if args.verbose or report.get("status") == "failed":
                 print("\nStep Details:")
-                for step in report.get('steps', []):
-                    status_icon = "+" if step['status'] == 'passed' else "X"
+                for step in report.get("steps", []):
+                    status_icon = "+" if step["status"] == "passed" else "X"
                     print(f"  {status_icon} [{step['index']}] {step['keyword']}: {step['status']} ({step.get('duration_sec', 0):.2f}s)")
-                    if step['status'] == 'failed' and 'error' in step:
+                    if step["status"] == "failed" and "error" in step:
                         print(f"      Error: {step['error']}")
 
             # Print errors
-            if report.get('errors'):
+            if report.get("errors"):
                 print("\nErrors:")
-                for error in report['errors']:
+                for error in report["errors"]:
                     print(f"  - {error}")
 
             print("=" * 60)
@@ -361,13 +366,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(json.dumps({
                 "status": "ok",
                 "outputs": paths,
-                "controls": len(result.get("controls", []))
+                "controls": len(result.get("controls", [])),
             }, indent=2, ensure_ascii=False))
             return 0
         except Exception as e:
             print(json.dumps({
                 "status": "error",
-                "error": f"{type(e).__name__}: {e}"
+                "error": f"{type(e).__name__}: {e}",
             }, indent=2), file=sys.stderr)
             return 1
 
@@ -376,7 +381,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("ERROR: Recording requires additional dependencies.", file=sys.stderr)
             print("Install with: pip install pynput comtypes", file=sys.stderr)
             return 1
-        
+
         try:
             recorder = record_session(
                 elements_yaml=args.elements,
@@ -395,7 +400,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 1
 
     if args.cmd == "validate":
-        errors = []
+        errors: List[str] = []
 
         if args.scenario and args.scenarios_dir:
             print("Error: --scenario and --scenarios-dir are mutually exclusive", file=sys.stderr)
@@ -403,7 +408,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not args.scenario and not args.scenarios_dir:
             print("Error: one of --scenario or --scenarios-dir is required", file=sys.stderr)
             return 1
-        
+
         try:
             repo = Repository(args.elements)
             print(f"+ Elements file is valid: {args.elements}")
@@ -435,7 +440,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 with open(scenario_path, "r", encoding="utf-8") as f:
                     scenario = yaml_lib.safe_load(f)
                 runner.validate(scenario)
-                steps_count = len(scenario.get('steps', [])) if isinstance(scenario, dict) else 0
+                steps_count = len(scenario.get("steps", [])) if isinstance(scenario, dict) else 0
                 print(f"+ Scenario file is valid: {scenario_path}")
                 print(f"  - Steps: {steps_count}")
                 validation_results.append({
@@ -456,35 +461,35 @@ def main(argv: Optional[List[str]] = None) -> int:
             _print_validation_summary(validation_results)
 
         return 2 if errors else 0
-        
+
     if args.cmd == "list-elements":
         try:
             repo = Repository(args.elements)
         except Exception as e:
             print(f"Error loading elements file: {e}", file=sys.stderr)
             return 1
-        
+
         windows = repo.list_windows()
         print(f"Windows ({len(windows)}):")
         for name in windows:
             print(f"  - {name}")
-        
+
         elements = repo.list_elements()
         print(f"\nElements ({len(elements)}):")
-        
+
         by_window: Dict[str, List[str]] = {}
         for name in elements:
             spec = repo.get_element_spec(name)
-            window = spec.get('window', 'unknown')
+            window = spec.get("window", "unknown")
             if window not in by_window:
                 by_window[window] = []
             by_window[window].append(name)
-        
+
         for window, elem_names in by_window.items():
             print(f"\n  [{window}]")
             for name in elem_names:
                 print(f"    - {name}")
-        
+
         return 0
 
     return 1

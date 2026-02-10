@@ -9,21 +9,17 @@ timing problems.
 """
 
 from __future__ import annotations
+
 import time
-from typing import Any, Callable, Optional, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 from .config import TimeConfig
 from .context import ActionContextManager
-from .exceptions import (
-    ActionError,
-    ElementNotEnabledError,
-    ElementNotFoundError,
-    ElementNotVisibleError,
-    StaleElementError,
-    TimeoutError,
-    UIAutoError,
-)
-from .waits import wait_until, wait_until_passes, retry
+from .element_meta import ElementMeta
+from .exceptions import (ActionError, ElementNotEnabledError,
+                         ElementNotFoundError, ElementNotVisibleError,
+                         StaleElementError, TimeoutError, UIAutoError)
+from .waits import retry, wait_until, wait_until_passes
 
 if TYPE_CHECKING:
     from .resolver import Resolver
@@ -44,7 +40,7 @@ class ResilientElement:
     This is the internal implementation. Users interact with Element
     which delegates to this class for enhanced operations.
     """
-    
+
     def __init__(
         self,
         raw_element: Any,
@@ -55,6 +51,7 @@ class ResilientElement:
         polling_interval: float = 0.2,
         auto_wait_visible: bool = False,
         auto_wait_enabled: bool = False,
+        meta: Optional[ElementMeta] = None
     ):
         """
         @param raw_element The underlying UI element object
@@ -75,7 +72,7 @@ class ResilientElement:
         self._auto_wait_visible = auto_wait_visible
         self._auto_wait_enabled = auto_wait_enabled
         self._resolution_time = time.time()
-    
+        self._meta = meta
     @property
     def element_name(self) -> str:
         return self._element_name

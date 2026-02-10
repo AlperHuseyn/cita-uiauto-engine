@@ -23,7 +23,8 @@ from .actions import Actions
 from .runner import Runner
 
 # Element classes
-from .element import Element, ElementMeta
+from .element_meta import ElementMeta
+from .resilient import ResilientElement
 
 # Configuration
 from .config import (
@@ -75,7 +76,7 @@ __all__ = [
     "Actions",
     "Runner",
     # Elements
-    "Element",
+    "ResilientElement",
     "ElementMeta",
     # Configuration
     "TimeConfig",
