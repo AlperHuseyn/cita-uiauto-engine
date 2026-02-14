@@ -41,6 +41,7 @@ class TimeoutError(UIAutoError):
         self.timeout: Optional[float] = None
         self.attempt_count: Optional[int] = None
         self.elapsed_time: Optional[float] = None
+        self.stage: Optional[str] = None
     
     def __str__(self) -> str:
         base_msg = super().__str__()
@@ -52,6 +53,9 @@ class TimeoutError(UIAutoError):
             details.append(f"Attempts: {self.attempt_count}")
         if self.elapsed_time is not None:
             details.append(f"Elapsed: {self.elapsed_time:.2f}s")
+        if self.stage is not None:
+            details.append(f"Stage: {self.stage}")
+
         
         if details:
             return f"{base_msg} [{', '.join(details)}]"

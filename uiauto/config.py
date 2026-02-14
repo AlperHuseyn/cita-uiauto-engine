@@ -12,7 +12,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, Optional
 
-from .timings import (PAUSE_FIELDS, TIMEOUT_FIELDS, build_preset_values, list_presets)
+from .timings import (PAUSE_FIELDS, TIMEOUT_FIELDS, build_preset_values,
+                      list_presets)
 
 
 @dataclass
@@ -38,17 +39,12 @@ class TimeoutSettings:
 
 class TimeConfig:
     """
-    Global timeout configuration for the framework.
-    
-    Usage:
-        # Modify global defaults
-        TimeConfig.default().element_wait.timeout = 15.0
-        
-        # Use context manager for temporary overrides
-        with TimeConfig.override(element_wait=TimeoutSettings(5.0, 0.1)):
-            actions.click("fast_element")
+    Timeout configuration for the framework.
+
+    Deterministic precedence is applied per run via build/install APIs:
+      base defaults -> preset -> CLI overrides -> app defaults
     """
-    
+
     _default_instance: Optional[TimeConfig] = None
     _default_preset: str = "default"
     _local = threading.local()
@@ -99,10 +95,14 @@ class TimeConfig:
             data[name] = getattr(self, name)
         return data
 
-    def _clone(self) -> TimeConfig:
+    def clone(self) -> TimeConfig:
+        """Return a deep clone of this config."""
         clone = TimeConfig()
         clone._apply_values(self.to_dict())
         return clone
+
+    def _clone(self) -> TimeConfig:
+        return self.clone()
 
     def get_action_settings(self, action_name: str) -> TimeoutSettings:
         mapping = {
@@ -124,8 +124,40 @@ class TimeConfig:
         return self.action_timeout
         
     @classmethod
+    def build_from(
+        cls,
+        *,
+        preset: str = "default",
+        overrides: Optional[Dict[str, Any]] = None,
+        app_defaults: Optional[Dict[str, float]] = None,
+    ) -> TimeConfig:
+        """Build a deterministic run-scope config snapshot."""
+        cfg = cls(preset)
+        if overrides:
+            _apply_overrides(cfg, overrides)
+        if app_defaults and preset == "default":
+            default_timeout = float(app_defaults["default_timeout"])
+            polling_interval = float(app_defaults["polling_interval"])
+            _apply_overrides(
+                cfg,
+                {
+                    "element_wait": {"timeout": default_timeout, "interval": polling_interval},
+                    "visibility_wait": {"timeout": default_timeout, "interval": polling_interval},
+                    "enabled_wait": {"timeout": default_timeout, "interval": polling_interval},
+                    "resolve_window": {"timeout": default_timeout, "interval": polling_interval},
+                    "resolve_element": {"timeout": default_timeout, "interval": polling_interval},
+                    "wait_for_any": {"timeout": default_timeout, "interval": polling_interval},
+                    "exists_wait": {
+                        "timeout": max(default_timeout / 5, polling_interval),
+                        "interval": polling_interval,
+                    },
+                },
+            )
+        return cfg
+
+    @classmethod
     def default(cls) -> TimeConfig:
-        """Get the global default configuration (singleton)."""
+        """Get the immutable process default configuration (singleton)."""
         if cls._default_instance is None:
             with cls._lock:
                 if cls._default_instance is None:
@@ -133,31 +165,46 @@ class TimeConfig:
         return cls._default_instance
     
     @classmethod
+    def install_run_config(cls, config: TimeConfig) -> None:
+        """Install per-thread run configuration snapshot."""
+        cls._local.run_config = config
+
+    @classmethod
+    def clear_run_config(cls) -> None:
+        """Clear per-thread run configuration snapshot."""
+        cls._local.run_config = None
+
+    @classmethod
     def current(cls) -> TimeConfig:
         """Get the current effective configuration."""
+        run_cfg = getattr(cls._local, "run_config", None)
+        if run_cfg is not None:
+            return run_cfg
+
         override = getattr(cls._local, "override", None)
         if override is not None:
             return override
+
         return cls.default()
     
     @classmethod
     def apply_preset(cls, preset: str) -> None:
-        """Apply a timing preset to the global configuration."""
-        values = build_preset_values(preset)
-        config = cls.default()
-        config._apply_values(values)
-        cls._default_preset = preset
+        """Backward-compatible API: apply preset to current run-scope config."""
+        base = cls.current().clone()
+        base._apply_values(build_preset_values(preset))
+        cls.install_run_config(base)
 
     @classmethod
     def apply_overrides(cls, overrides: Dict[str, Any]) -> None:
-        """Apply overrides to the global configuration."""
-        config = cls.default()
+        """Backward-compatible API: apply overrides to current run-scope config."""
+        config = cls.current().clone()
         _apply_overrides(config, overrides)
+        cls.install_run_config(config)
 
     @classmethod
     def apply_timeout_override(cls, timeout: float) -> None:
-        """Override base timeout values without changing intervals."""
-        config = cls.default()
+        """Backward-compatible API: override base timeout values for run-scope config."""
+        config = cls.current().clone()
         base_overrides: Dict[str, Any] = {
             "element_wait": {"timeout": timeout},
             "window_wait": {"timeout": timeout * 2},
@@ -169,11 +216,12 @@ class TimeConfig:
             "exists_wait": {"timeout": max(timeout / 5, 0.1)},
         }
         _apply_overrides(config, base_overrides)
+        cls.install_run_config(config)
 
     @classmethod
     def apply_app_defaults(cls, default_timeout: float, polling_interval: float) -> None:
-        """Apply elements.yaml default_timeout/polling_interval to base waits."""
-        config = cls.default()
+        """Backward-compatible API: apply app defaults to run-scope config."""
+        config = cls.current().clone()
         app_overrides: Dict[str, Any] = {
             "element_wait": {"timeout": default_timeout, "interval": polling_interval},
             "visibility_wait": {"timeout": default_timeout, "interval": polling_interval},
@@ -181,16 +229,21 @@ class TimeConfig:
             "resolve_window": {"timeout": default_timeout, "interval": polling_interval},
             "resolve_element": {"timeout": default_timeout, "interval": polling_interval},
             "wait_for_any": {"timeout": default_timeout, "interval": polling_interval},
-            "exists_wait": {"timeout": max(default_timeout / 5, polling_interval), "interval": polling_interval},
+            "exists_wait": {
+                "timeout": max(default_timeout / 5, polling_interval),
+                "interval": polling_interval,
+            },
         }
         _apply_overrides(config, app_overrides)
+        cls.install_run_config(config)
+
     
     @classmethod
     @contextmanager
     def override(cls, **kwargs: Any) -> Generator[TimeConfig, None, None]:
         """Context manager for temporary configuration overrides."""
         previous = getattr(cls._local, "override", None)
-        new_config = cls.current()._clone()
+        new_config = cls.current().clone()
         _apply_overrides(new_config, kwargs)
         
         cls._local.override = new_config
@@ -201,11 +254,12 @@ class TimeConfig:
     
     @classmethod
     def reset_to_defaults(cls) -> None:
-        """Reset global configuration to factory defaults."""
+        """Reset default and clear all thread-local config state."""
         with cls._lock:
             cls._default_preset = "default"
             cls._default_instance = cls(cls._default_preset)
         cls._local.override = None
+        cls._local.run_config = None
 
 def _apply_overrides(config: TimeConfig, overrides: Dict[str, Any]) -> None:
     for key, value in overrides.items():
@@ -228,15 +282,15 @@ def _apply_overrides(config: TimeConfig, overrides: Dict[str, Any]) -> None:
             raise ValueError(f"Unknown TimeConfig field: {key}")
 
 def configure_for_ci() -> None:
-    """Configure timeouts optimized for CI/CD environments."""
+    """Configure timeouts optimized for CI/CD environments (run scope)."""
     TimeConfig.apply_preset("ci")
 
 def configure_for_local_dev() -> None:
-    """Configure timeouts optimized for local development."""
+    """Configure timeouts optimized for local development (run scope)."""
     TimeConfig.apply_preset("fast")
 
 def configure_for_slow() -> None:
-    """Configure timeouts optimized for slow environments."""
+    """Configure timeouts optimized for slow environments (run scope)."""
     TimeConfig.apply_preset("slow")
 
 def available_presets() -> Dict[str, Dict[str, Any]]:

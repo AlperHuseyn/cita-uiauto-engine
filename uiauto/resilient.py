@@ -17,8 +17,8 @@ from .config import TimeConfig
 from .context import ActionContextManager
 from .element_meta import ElementMeta
 from .exceptions import (ActionError, ElementNotEnabledError,
-                         ElementNotFoundError, ElementNotVisibleError,
-                         StaleElementError, TimeoutError, UIAutoError)
+                        ElementNotFoundError, ElementNotVisibleError,
+                        StaleElementError, TimeoutError, UIAutoError)
 from .waits import retry, wait_until, wait_until_passes
 
 if TYPE_CHECKING:
@@ -125,7 +125,8 @@ class ResilientElement:
                 timeout=config.timeout,
                 interval=config.interval,
                 exceptions=(ElementNotFoundError, UIAutoError, Exception),
-                description=f"re-resolving stale element '{self._element_name}'"
+                description=f"re-resolving stale element '{self._element_name}'",
+                stage="resolve"
             )
             self._raw_element = new_element.handle
             self._resolution_time = time.time()
@@ -150,7 +151,8 @@ class ResilientElement:
                 lambda: self.is_visible(),
                 timeout=effective_timeout,
                 interval=config.interval,
-                description=f"element '{self._element_name}' to become visible"
+                description=f"element '{self._element_name}' to become visible",
+                stage="precondition"
             )
         except TimeoutError as e:
             raise ElementNotVisibleError(
@@ -173,7 +175,8 @@ class ResilientElement:
                 lambda: self.is_enabled(),
                 timeout=effective_timeout,
                 interval=config.interval,
-                description=f"element '{self._element_name}' to become enabled"
+                description=f"element '{self._element_name}' to become enabled",
+                stage="precondition"
             )
         except TimeoutError as e:
             raise ElementNotEnabledError(
@@ -182,13 +185,16 @@ class ResilientElement:
             ) from e
     
     def _prepare_for_action(self, action_name: str) -> None:
-        """Prepare element for an action."""
+        """Prepare element for an action using centralized precondition ownership."""
         self._ensure_fresh()
-        
-        if self._auto_wait_visible:
+
+        needs_visible = {"hover", "get_text", "select_item"}
+        needs_enabled = {"click", "double_click", "right_click", "set_text", "check", "uncheck", "select"}
+
+        if self._auto_wait_visible or action_name in needs_visible or action_name in needs_enabled:
             self._ensure_visible()
-        
-        if self._auto_wait_enabled:
+
+        if self._auto_wait_enabled or action_name in needs_enabled:
             self._ensure_enabled()
     
     def _execute_with_retry(
@@ -212,7 +218,8 @@ class ResilientElement:
                         max_attempts=config.retry_count,
                         interval=config.interval,
                         exceptions=retryable_exceptions,
-                        description=f"{action_name} on '{self._element_name}'"
+                        description=f"{action_name} on '{self._element_name}'",
+                        stage="execute"
                     )
                 else:
                     return wait_until_passes(
@@ -220,7 +227,8 @@ class ResilientElement:
                         timeout=config.timeout,
                         interval=config.interval,
                         exceptions=retryable_exceptions,
-                        description=f"{action_name} on '{self._element_name}'"
+                        description=f"{action_name} on '{self._element_name}'",
+                        stage="execute"
                     )
             except TimeoutError as e:
                 raise ActionError(
@@ -286,21 +294,24 @@ class ResilientElement:
                 self.exists,
                 timeout=effective_timeout,
                 interval=effective_interval,
-                description=f"element '{self._element_name}' to exist"
+                description=f"element '{self._element_name}' to exist",
+                stage="precondition"
             )
         elif state == "visible":
             wait_until(
                 lambda: self.exists() and self.is_visible(),
                 timeout=effective_timeout,
                 interval=effective_interval,
-                description=f"element '{self._element_name}' to be visible"
+                description=f"element '{self._element_name}' to be visible",
+                stage="precondition"
             )
         elif state == "enabled":
             wait_until(
                 lambda: self.exists() and self.is_visible() and self.is_enabled(),
                 timeout=effective_timeout,
                 interval=effective_interval,
-                description=f"element '{self._element_name}' to be enabled"
+                description=f"element '{self._element_name}' to be enabled",
+                stage="precondition"
             )
         else:
             raise ValueError(f"Unknown state: {state}. Use 'exists', 'visible', or 'enabled'")
@@ -326,7 +337,8 @@ class ResilientElement:
             self.exists,
             timeout=effective_timeout,
             interval=config.interval,
-            description=f"element '{self._element_name}' to disappear"
+            description=f"element '{self._element_name}' to disappear",
+            stage="precondition"
         )
     
     # --- Actions ---

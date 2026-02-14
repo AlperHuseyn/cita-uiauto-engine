@@ -17,17 +17,58 @@ TIMING_LOGGER = TimingLogger()
 T = TypeVar("T")
 
 
+def _now() -> float:
+    """Monotonic time source for deterministic timeout calculations."""
+    return time.monotonic()
+
+def _set_timeout_metadata(
+    error: TimeoutError,
+    *,
+    description: str,
+    timeout: float,
+    attempt_count: int,
+    elapsed: float,
+    stage: Optional[str],
+) -> None:
+    error.description = description
+    error.timeout = timeout
+    error.attempt_count = attempt_count
+    error.elapsed_time = elapsed
+    error.stage = stage
+
+def _log_retry_attempt(description: str, attempt: int, stage: Optional[str]) -> None:
+    """Emit sampled retry attempt events to action logger if enabled."""
+    try:
+        from .actionlogger import ACTION_LOGGER
+
+        if not ACTION_LOGGER.is_enabled():
+            return
+        if not ACTION_LOGGER.should_log_retry_attempt(attempt):
+            return
+
+        ACTION_LOGGER.log(
+            action="retry_attempt",
+            status="info",
+            metadata={"description": description},
+            attempt=attempt,
+            phase=stage or "execute",
+            event="retry_attempt",
+        )
+    except Exception:
+        return
+
 def wait_until(
     predicate: Callable[[], T],
     timeout: float,
     interval: float = 0.2,
     description: str = "condition",
+    stage: Optional[str] = None,
 ) -> T:
     """
     Repeatedly runs predicate until it returns a truthy value,
     or until timeout.
     """
-    start_time = time.time()
+    start_time = _now()
     last_exception: Optional[BaseException] = None
     attempt_count = 0
 
@@ -35,12 +76,12 @@ def wait_until(
         TIMING_LOGGER.log(
             event="wait_start",
             description=description,
-            metadata={"timeout_s": timeout, "interval_s": interval},
+            metadata={"timeout_s": timeout, "interval_s": interval, "stage": stage},
         )
 
     while True:
         attempt_count += 1
-        elapsed = time.time() - start_time
+        elapsed = _now() - start_time
         
         if elapsed >= timeout:
             break
@@ -49,7 +90,7 @@ def wait_until(
             result = predicate()
             if result:
                 if TIMING_LOGGER.is_enabled():
-                    elapsed = time.time() - start_time
+                    elapsed = _now() - start_time
                     TIMING_LOGGER.log(
                         event="wait_success",
                         description=description,
@@ -57,6 +98,7 @@ def wait_until(
                         metadata={
                             "attempts": attempt_count,
                             "elapsed_s": round(elapsed, 3),
+                            "stage": stage,
                         },
                     )
                 return result
@@ -68,7 +110,7 @@ def wait_until(
         if sleep_time > 0:
             time.sleep(sleep_time)
 
-    elapsed = time.time() - start_time
+    elapsed = _now() - start_time
     if TIMING_LOGGER.is_enabled():
         TIMING_LOGGER.log(
             event="wait_timeout",
@@ -78,6 +120,7 @@ def wait_until(
                 "timeout_s": timeout,
                 "attempts": attempt_count,
                 "elapsed_s": round(elapsed, 3),
+                "stage": stage,
             },
         )
     
@@ -94,10 +137,14 @@ def wait_until(
         )
         error.original_exception = None
     
-    error.description = description
-    error.timeout = timeout
-    error.attempt_count = attempt_count
-    error.elapsed_time = elapsed
+    _set_timeout_metadata(
+        error,
+        description=description,
+        timeout=timeout,
+        attempt_count=attempt_count,
+        elapsed=elapsed,
+        stage=stage,
+    )
     raise error
 
 
@@ -108,12 +155,13 @@ def wait_until_passes(
     exceptions: Tuple[type, ...] = (Exception,),
     description: str = "operation",
     *args: Any,
-    **kwargs: Any
+    stage: Optional[str] = None,
+    **kwargs: Any,
 ) -> T:
     """
     Wait until func(*args, **kwargs) succeeds without raising specified exceptions.
     """
-    start_time = time.time()
+    start_time = _now()
     last_exception: Optional[BaseException] = None
     attempt_count = 0
 
@@ -121,15 +169,16 @@ def wait_until_passes(
         TIMING_LOGGER.log(
             event="retry_start",
             description=description,
-            metadata={"timeout_s": timeout, "interval_s": interval},
+            metadata={"timeout_s": timeout, "interval_s": interval, "stage": stage},
         )
 
     while True:
         attempt_count += 1
+        _log_retry_attempt(description, attempt_count, stage)
         try:
             result = func(*args, **kwargs)
             if TIMING_LOGGER.is_enabled():
-                elapsed = time.time() - start_time
+                elapsed = _now() - start_time
                 TIMING_LOGGER.log(
                     event="retry_success",
                     description=description,
@@ -137,12 +186,13 @@ def wait_until_passes(
                     metadata={
                         "attempts": attempt_count,
                         "elapsed_s": round(elapsed, 3),
+                        "stage": stage,
                     },
                 )
             return result
         except exceptions as e:
             last_exception = e
-            elapsed = time.time() - start_time
+            elapsed = _now() - start_time
             time_left = timeout - elapsed
             
             if time_left <= 0:
@@ -154,6 +204,7 @@ def wait_until_passes(
                         metadata={
                             "attempts": attempt_count,
                             "elapsed_s": round(elapsed, 3),
+                            "stage": stage,
                         },
                     )
                 error = TimeoutError(
@@ -161,12 +212,15 @@ def wait_until_passes(
                     f"({attempt_count} attempts). "
                     f"Last error: {type(e).__name__}: {e}"
                 )
-                error.original_exception = last_exception
-                error.description = description
-                error.timeout = timeout
-                error.attempt_count = attempt_count
-                error.elapsed_time = elapsed
-                raise error
+                _set_timeout_metadata(
+                    error,
+                    description=description,
+                    timeout=timeout,
+                    attempt_count=attempt_count,
+                    elapsed=elapsed,
+                    stage=stage,
+                )
+                raise error from e
             
             sleep_time = min(interval, time_left)
             if TIMING_LOGGER.is_enabled():
@@ -176,6 +230,7 @@ def wait_until_passes(
                     metadata={
                         "attempt": attempt_count,
                         "sleep_s": round(sleep_time, 3),
+                        "stage": stage,
                     },
                 )
             time.sleep(sleep_time)
@@ -186,23 +241,24 @@ def wait_until_not(
     timeout: float,
     interval: float = 0.2,
     description: str = "condition to become false",
+    stage: Optional[str] = None,
 ) -> None:
     """
     Wait until predicate returns a falsy value.
     """
-    start_time = time.time()
+    start_time = _now()
     attempt_count = 0
 
     if TIMING_LOGGER.is_enabled():
         TIMING_LOGGER.log(
             event="wait_start",
             description=description,
-            metadata={"timeout_s": timeout, "interval_s": interval},
+            metadata={"timeout_s": timeout, "interval_s": interval, "stage": stage},
         )
 
     while True:
         attempt_count += 1
-        elapsed = time.time() - start_time
+        elapsed = _now() - start_time
         
         if elapsed >= timeout:
             break
@@ -211,7 +267,7 @@ def wait_until_not(
             result = predicate()
             if not result:
                 if TIMING_LOGGER.is_enabled():
-                    elapsed = time.time() - start_time
+                    elapsed = _now() - start_time
                     TIMING_LOGGER.log(
                         event="wait_success",
                         description=description,
@@ -219,6 +275,7 @@ def wait_until_not(
                         metadata={
                             "attempts": attempt_count,
                             "elapsed_s": round(elapsed, 3),
+                            "stage": stage,
                         },
                     )
                 return
@@ -230,7 +287,7 @@ def wait_until_not(
         if sleep_time > 0:
             time.sleep(sleep_time)
 
-    elapsed = time.time() - start_time
+    elapsed = _now() - start_time
     if TIMING_LOGGER.is_enabled():
         TIMING_LOGGER.log(
             event="wait_timeout",
@@ -240,6 +297,7 @@ def wait_until_not(
                 "timeout_s": timeout,
                 "attempts": attempt_count,
                 "elapsed_s": round(elapsed, 3),
+                "stage": stage,
             },
         )
     error = TimeoutError(
@@ -247,10 +305,14 @@ def wait_until_not(
         f"(condition kept returning truthy)"
     )
     error.original_exception = None
-    error.description = description
-    error.timeout = timeout
-    error.attempt_count = attempt_count
-    error.elapsed_time = elapsed
+    _set_timeout_metadata(
+        error,
+        description=description,
+        timeout=timeout,
+        attempt_count=attempt_count,
+        elapsed=elapsed,
+        stage=stage,
+    )
     raise error
 
 
@@ -259,6 +321,7 @@ def wait_for_any(
     timeout: float,
     interval: float = 0.2,
     descriptions: Optional[List[str]] = None,
+    stage: Optional[str] = None,
 ) -> int:
     """
     Wait until any of the predicates returns a truthy value.
@@ -267,7 +330,7 @@ def wait_for_any(
     if descriptions is None:
         descriptions = [f"predicate[{i}]" for i in range(len(predicates))]
     
-    start_time = time.time()
+    start_time = _now()
     last_exceptions: List[Optional[BaseException]] = [None] * len(predicates)
     attempt_count = 0
 
@@ -275,12 +338,12 @@ def wait_for_any(
         TIMING_LOGGER.log(
             event="wait_any_start",
             description="any predicate",
-            metadata={"timeout_s": timeout, "interval_s": interval},
+            metadata={"timeout_s": timeout, "interval_s": interval, "stage": stage},
         )
 
     while True:
         attempt_count += 1
-        elapsed = time.time() - start_time
+        elapsed = _now() - start_time
         
         if elapsed >= timeout:
             break
@@ -292,12 +355,13 @@ def wait_for_any(
                     if TIMING_LOGGER.is_enabled():
                         TIMING_LOGGER.log(
                             event="wait_any_success",
-                            description=descriptions[i] if descriptions else f"predicate[{i}]",
+                            description=descriptions[i],
                             status="success",
                             metadata={
                                 "attempts": attempt_count,
                                 "elapsed_s": round(elapsed, 3),
                                 "index": i,
+                                "stage": stage,
                             },
                         )
                     return i
@@ -309,7 +373,7 @@ def wait_for_any(
         if sleep_time > 0:
             time.sleep(sleep_time)
 
-    elapsed = time.time() - start_time
+    elapsed = _now() - start_time
     if TIMING_LOGGER.is_enabled():
         TIMING_LOGGER.log(
             event="wait_any_timeout",
@@ -319,17 +383,21 @@ def wait_for_any(
                 "timeout_s": timeout,
                 "attempts": attempt_count,
                 "elapsed_s": round(elapsed, 3),
+                "stage": stage,
             },
         )
     desc_str = ", ".join(descriptions)
-    error = TimeoutError(
-        f"Timed out waiting for any of [{desc_str}] after {timeout}s"
-    )
+    error = TimeoutError(f"Timed out waiting for any of [{desc_str}] after {timeout}s")
     error.original_exception = next((e for e in last_exceptions if e is not None), None)
-    error.description = f"any of [{desc_str}]"
-    error.timeout = timeout
-    error.attempt_count = attempt_count
-    error.elapsed_time = elapsed
+    error.original_exceptions = last_exceptions
+    _set_timeout_metadata(
+        error,
+        description=f"any of [{desc_str}]",
+        timeout=timeout,
+        attempt_count=attempt_count,
+        elapsed=elapsed,
+        stage=stage,
+    )
     raise error
 
 
@@ -340,26 +408,28 @@ def retry(
     exceptions: Tuple[type, ...] = (Exception,),
     description: str = "operation",
     *args: Any,
+    stage: Optional[str] = None,
     **kwargs: Any
 ) -> T:
     """
     Retry a function up to max_attempts times.
     """
-    start_time = time.time()
+    start_time = _now()
     last_exception: Optional[BaseException] = None
 
     if TIMING_LOGGER.is_enabled():
         TIMING_LOGGER.log(
             event="retry_start",
             description=description,
-            metadata={"max_attempts": max_attempts, "interval_s": interval},
+            metadata={"max_attempts": max_attempts, "interval_s": interval, "stage": stage},
         )
 
     for attempt in range(1, max_attempts + 1):
+        _log_retry_attempt(description, attempt, stage)
         try:
             result = func(*args, **kwargs)
             if TIMING_LOGGER.is_enabled():
-                elapsed = time.time() - start_time
+                elapsed = _now() - start_time
                 TIMING_LOGGER.log(
                     event="retry_success",
                     description=description,
@@ -367,6 +437,7 @@ def retry(
                     metadata={
                         "attempts": attempt,
                         "elapsed_s": round(elapsed, 3),
+                        "stage": stage,
                     },
                 )
             return result
@@ -380,27 +451,40 @@ def retry(
                         metadata={
                             "attempt": attempt,
                             "sleep_s": round(interval, 3),
+                            "stage": stage,
                         },
                     )
                 time.sleep(interval)
+            else:
+                elapsed = _now() - start_time
+                error = TimeoutError(
+                    f"Failed {description} after {max_attempts} attempts. "
+                    f"Last error: {type(last_exception).__name__}: {last_exception}"
+                )
+                error.original_exception = last_exception
+                _set_timeout_metadata(
+                    error,
+                    description=description,
+                    timeout=elapsed,
+                    attempt_count=max_attempts,
+                    elapsed=elapsed,
+                    stage=stage,
+                )
+                raise error from e
 
-    elapsed = time.time() - start_time
-    if TIMING_LOGGER.is_enabled():
-        TIMING_LOGGER.log(
-            event="retry_failed",
-            description=description,
-            status="error",
-            metadata={
-                "attempts": max_attempts,
-                "elapsed_s": round(elapsed, 3),
-            },
-        )
+    elapsed = _now() - start_time
+    
     error = TimeoutError(
         f"Failed {description} after {max_attempts} attempts. "
         f"Last error: {type(last_exception).__name__}: {last_exception}"
     )
     error.original_exception = last_exception
-    error.description = description
-    error.attempt_count = max_attempts
-    error.elapsed_time = elapsed
+    _set_timeout_metadata(
+        error,
+        description=description,
+        timeout=elapsed,
+        attempt_count=max_attempts,
+        elapsed=elapsed,
+        stage=stage,
+    )
     raise error

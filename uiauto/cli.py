@@ -14,21 +14,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .actionlogger import ACTION_LOGGER
-from .config import (
-    TimeConfig,
-    configure_for_ci,
-    configure_for_local_dev,
-    configure_for_slow,
-)
-from .waits import TIMING_LOGGER
 from .context import ActionContextManager
-from .inspector import (
-    emit_elements_yaml_stateful,
-    inspect_window,
-    write_inspect_outputs,
-)
+from .inspector import (emit_elements_yaml_stateful, inspect_window,
+                        write_inspect_outputs)
 from .repository import Repository
 from .runner import Runner
+from .waits import TIMING_LOGGER
 
 # Import recorder conditionally to avoid hard dependency on optional packages
 try:
@@ -39,18 +30,30 @@ except ImportError:
     record_session = None
 
 
-def _apply_timeout_config(args: argparse.Namespace) -> None:
-    """Apply timeout configuration based on CLI arguments."""
+def _resolve_timing_options(args: argparse.Namespace) -> tuple[str, Dict[str, Any]]:
+    """Resolve deterministic timing preset and CLI overrides without mutating global state."""
+    preset = "default"
     if getattr(args, "ci", False):
-        configure_for_ci()
+        preset = "ci"
     elif getattr(args, "fast", False):
-        configure_for_local_dev()
+        preset = "fast"
     elif getattr(args, "slow", False):
-        configure_for_slow()
+        preset = "slow"
 
+    overrides: Dict[str, Any] = {}
     timeout = getattr(args, "timeout", None)
     if timeout is not None:
-        TimeConfig.apply_timeout_override(timeout)
+        overrides = {
+            "element_wait": {"timeout": timeout},
+            "window_wait": {"timeout": timeout * 2},
+            "visibility_wait": {"timeout": timeout},
+            "enabled_wait": {"timeout": timeout / 2},
+            "resolve_window": {"timeout": timeout},
+            "resolve_element": {"timeout": timeout},
+            "wait_for_any": {"timeout": timeout},
+            "exists_wait": {"timeout": max(timeout / 5, 0.1)},
+        }
+    return preset, overrides
 
 
 def _resolve_scenario_paths(
@@ -146,7 +149,17 @@ def _configure_action_logger_from_env() -> None:
 
     log_file = os.getenv("UIAUTO_ACTION_LOG_FILE")
     level = os.getenv("UIAUTO_ACTION_LOG_LEVEL", "INFO")
-    ACTION_LOGGER.configure(console=True, file_path=log_file, level=level)
+    fmt = os.getenv("UIAUTO_ACTION_LOG_FORMAT", "line")
+    max_tb_chars = int(os.getenv("UIAUTO_ACTION_LOG_MAX_TRACEBACK", "4000"))
+    sample_retry = int(os.getenv("UIAUTO_ACTION_LOG_SAMPLE_RETRY", "1"))
+    ACTION_LOGGER.configure(
+        console=True,
+        file_path=log_file,
+        level=level,
+        format=fmt,
+        max_traceback_chars=max_tb_chars,
+        sample_retry_events=sample_retry,
+    )
     ACTION_LOGGER.enable()
 
 
@@ -258,7 +271,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"Error loading elements file: {e}", file=sys.stderr)
             return 1
 
-        _apply_timeout_config(args)
+        timing_preset, timing_overrides = _resolve_timing_options(args)
 
         runner = Runner(repo, schema_path=args.schema)
 
@@ -291,6 +304,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 app_path=args.app,
                 variables=variables,
                 report_path=per_report_path,
+                timing_preset=timing_preset,
+                timing_overrides=timing_overrides,
             )
 
             scenario_results.append({

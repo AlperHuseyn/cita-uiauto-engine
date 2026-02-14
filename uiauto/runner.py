@@ -30,11 +30,13 @@ _VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 def _substitute(value: Any, variables: Dict[str, Any]) -> Any:
     """Substitute variables in step arguments."""
     if isinstance(value, str):
+
         def repl(m):
             key = m.group(1)
             if key not in variables:
                 return m.group(0)
             return str(variables[key])
+
         return _VAR_PATTERN.sub(repl, value)
     if isinstance(value, list):
         return [_substitute(v, variables) for v in value]
@@ -82,12 +84,31 @@ class Runner:
                 lines.append(f"- {list(e.path)}: {e.message}")
             raise ValueError("\n".join(lines))
 
+    def _build_time_config(
+            self,
+            *,
+            preset: str = "default",
+            overrides: Optional[Dict[str, Any]] = None,
+        ) -> TimeConfig:
+            """Build deterministic run-scope timing snapshot."""
+            app_defaults = {
+                "default_timeout": self.repo.app.default_timeout,
+                "polling_interval": self.repo.app.polling_interval,
+            }
+            return TimeConfig.build_from(
+                preset=preset,
+                overrides=overrides or {},
+                app_defaults=app_defaults,
+            )
+
     def run(
         self,
         scenario_path: str,
         app_path: Optional[str] = None,
         variables: Optional[Dict[str, Any]] = None,
         report_path: Optional[str] = None,
+        timing_preset: str = "default",
+        timing_overrides: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Run a scenario file."""
         from .actionlogger import ACTION_LOGGER
@@ -104,6 +125,12 @@ class Runner:
 
         steps: List[Dict[str, Any]] = scenario.get("steps", [])
         steps = _substitute(steps, variables)
+        
+        run_time_config = self._build_time_config(
+            preset=timing_preset,
+            overrides=timing_overrides,
+        )
+        TimeConfig.install_run_config(run_time_config)
 
         # Build session/resolver/actions
         sess = Session(
@@ -150,7 +177,6 @@ class Runner:
                 report["steps"].append(step_rec)
 
                 try:
-                    # Clear action context for each step
                     ActionContextManager.clear()
                     
                     self._execute(keyword, args, sess, actions)
@@ -159,7 +185,6 @@ class Runner:
                     step_rec["status"] = "failed"
                     step_rec["error"] = f"{type(e).__name__}: {e}"
                     
-                    # Capture action context trace if available
                     ctx = ActionContextManager.current()
                     if ctx:
                         step_rec["action_trace"] = ctx.format_trace()
@@ -183,14 +208,14 @@ class Runner:
         finally:
             report["duration_sec"] = round(time.time() - start_ts, 3)
             
-            # Clear action context
             ActionContextManager.clear()
             
-            # Best-effort close
             try:
                 sess.close_main_windows(timeout=TimeConfig.current().window_close.timeout)
             except Exception:
                 pass
+
+            TimeConfig.clear_run_config()
 
             if report_path:
                 os.makedirs(os.path.dirname(os.path.abspath(report_path)) or ".", exist_ok=True)
@@ -202,7 +227,7 @@ class Runner:
         keyword: str,
         args: Dict[str, Any],
         sess: Session,
-        actions: Actions
+        actions: Actions,
     ) -> None:
         """Execute single scenario step."""
         if keyword == "open_app":

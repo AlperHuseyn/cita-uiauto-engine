@@ -138,7 +138,6 @@ def list_presets() -> Dict[str, Dict[str, Any]]:
 
 
 def build_preset_values(preset: str) -> Dict[str, Any]:
-    """Return merged timing values for the preset."""
     preset_key = (preset or "default").lower()
     values: Dict[str, Any] = {}
     values.update(deepcopy(TIMEOUT_FIELDS))
@@ -152,6 +151,17 @@ def build_preset_values(preset: str) -> Dict[str, Any]:
         raise ValueError(f"Unknown timing preset: {preset}")
 
     for key, value in overrides.items():
+
+        # 🔹 Eğer action_timeout override edilmişse
+        if key == "action_timeout":
+            for timeout_key in values.keys():
+                if timeout_key.endswith("_action"):
+                    base = deepcopy(values[timeout_key])
+                    base.update(value)
+                    values[timeout_key] = base
+            continue
+
+        # 🔹 Normal TIMEOUT_FIELDS override
         if key in TIMEOUT_FIELDS:
             base = deepcopy(values[key])
             base.update(value)

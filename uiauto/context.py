@@ -152,7 +152,7 @@ def tracked_action(action_name: Optional[str] = None):
                     element_name = candidate
             
             start_time = time.time()
-            with ActionContextManager.action(name, element_name=element_name):
+            with ActionContextManager.action(name, element_name=element_name) as context:
                 try:
                     result = func(*args, **kwargs)
                     duration_ms = int((time.time() - start_time) * 1000)
@@ -162,6 +162,9 @@ def tracked_action(action_name: Optional[str] = None):
                         status="ok",
                         duration_ms=duration_ms,
                         metadata=kwargs,
+                        action_id=context.action_id,
+                        phase="execute",
+                        event="action_finish",
                     )
                     return result
                 except Exception as exc:
@@ -173,6 +176,9 @@ def tracked_action(action_name: Optional[str] = None):
                         duration_ms=duration_ms,
                         metadata=kwargs,
                         exception=exc,
+                        action_id=context.action_id,
+                        phase="execute",
+                        event="action_finish",
                     )
                     raise
         

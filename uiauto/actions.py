@@ -36,7 +36,6 @@ class Actions:
         """Click element."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("enabled")
             el.click()
         except ActionError:
             raise
@@ -48,7 +47,6 @@ class Actions:
         """Double-click element."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("enabled")
             el.double_click()
         except ActionError:
             raise
@@ -60,7 +58,6 @@ class Actions:
         """Right-click element."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("enabled")
             el.right_click()
         except ActionError:
             raise
@@ -72,7 +69,6 @@ class Actions:
         """Hover mouse over element."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("visible")
             el.hover()
         except ActionError:
             raise
@@ -90,7 +86,6 @@ class Actions:
         """Type text into element."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("enabled")
             el.set_text(text, clear_first=clear)
         except ActionError:
             raise
@@ -119,7 +114,6 @@ class Actions:
         with ActionContextManager.action("click_and_type", element_name=element):
             try:
                 el = self.resolver.resolve(element, overrides=overrides)
-                el.wait("enabled")
                 el.click()
                 
                 # Brief pause to ensure focus
@@ -222,7 +216,6 @@ class Actions:
         """Assert element text equals expected value."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("visible")
             actual = el.get_text()
             if actual != expected:
                 raise AssertionError(f"Expected '{expected}', got '{actual}'")
@@ -241,7 +234,6 @@ class Actions:
         """Assert element text contains substring."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("visible")
             actual = el.get_text()
             if substring not in actual:
                 raise AssertionError(f"Expected '{substring}' in '{actual}'")
@@ -280,7 +272,6 @@ class Actions:
         """Set checkbox to specific state."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("enabled")
 
             try:
                 ctrl_type = el.handle.element_info.control_type
@@ -308,7 +299,6 @@ class Actions:
         """Assert checkbox state."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("visible")
             state = el.get_state()
             expected = "checked" if checked else "unchecked"
             if state != expected:
@@ -334,7 +324,6 @@ class Actions:
         """
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("enabled")
 
             # Check if it's a ComboBox
             try:
@@ -350,7 +339,6 @@ class Actions:
                 import time
                 time.sleep(TimeConfig.current().combo_open_pause)
                 item = self.resolver.resolve(item_element, overrides=overrides)
-                item.wait("visible")
                 item.click()
                 time.sleep(TimeConfig.current().combo_select_pause)
                 return
@@ -371,7 +359,6 @@ class Actions:
                         option.lower(),  # Assumes element name matches option
                         overrides=overrides
                     )
-                    item.wait("visible")
                     item.click()
                     time.sleep(TimeConfig.current().combo_select_pause)
                     return
@@ -401,14 +388,12 @@ class Actions:
         """
         try:
             combo = self.resolver.resolve(combobox_element, overrides=overrides)
-            combo.wait("enabled")
             combo.click()
             
             import time
             time.sleep(TimeConfig.current().combo_open_pause)
             
             item = self.resolver.resolve(item_element, overrides=overrides)
-            item.wait("visible")
             item.click()
             time.sleep(TimeConfig.current().combo_select_pause)
             
@@ -432,7 +417,6 @@ class Actions:
         """Select item in list."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("visible")
             el.select_item(item_text=item_text, item_index=item_index)
         except ActionError:
             raise
@@ -449,7 +433,6 @@ class Actions:
         """Assert item count in list/combobox."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("visible")
             actual = el.item_count()
             if actual != expected:
                 raise AssertionError(f"Expected {expected} items, got {actual}")
@@ -471,7 +454,6 @@ class Actions:
         effective_timeout = timeout if timeout is not None else TimeConfig.current().exists_wait.timeout
         try:
             el = self.resolver.resolve(element, overrides=overrides, timeout=effective_timeout)
-            el.wait("enabled", timeout=effective_timeout)
             el.click()
             return True
         except Exception:
@@ -486,7 +468,6 @@ class Actions:
         """Get text content of an element."""
         try:
             el = self.resolver.resolve(element, overrides=overrides)
-            el.wait("visible")
             return el.get_text()
         except ActionError:
             raise

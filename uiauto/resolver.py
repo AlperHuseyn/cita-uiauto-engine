@@ -14,7 +14,7 @@ from .config import TimeConfig
 from .context import ActionContextManager
 from .element_meta import ElementMeta
 from .exceptions import (ElementNotFoundError, LocatorAttempt,
-                         WindowNotFoundError)
+                        WindowNotFoundError)
 from .repository import Repository
 from .resilient import ResilientElement
 from .session import Session
@@ -126,7 +126,8 @@ class Resolver:
                 pred,
                 timeout=effective_timeout,
                 interval=effective_interval,
-                description=f"window '{window_name}' exists+visible"
+                description=f"window '{window_name}' exists+visible",
+                stage="resolve"
             )
             return w
 
@@ -231,10 +232,6 @@ class Resolver:
                         polling_interval=effective_interval,
                     )
                     
-                    # For name/name_re based locators, skip exists() wait
-                    if not is_name_based:
-                        wrapped.wait("exists", timeout=effective_timeout)
-                    
                     # Cache the result
                     if self._cache_enabled:
                         self._element_cache[cache_key] = wrapped
@@ -284,7 +281,7 @@ class Resolver:
         element_name: str,
         timeout: Optional[float] = None,
         overrides: Optional[Dict[str, Any]] = None,
-    ) -> Element:
+    ) -> ResilientElement:
         """
         Explicitly wait for an element to appear.
         
@@ -319,7 +316,8 @@ class Resolver:
             lambda: self.exists(element_name, timeout=0, overrides=overrides),
             timeout=effective_timeout,
             interval=effective_interval,
-            description=f"element '{element_name}' to disappear"
+            description=f"element '{element_name}' to disappear",
+            stage="resolve"
         )
 
     def _resolve_in_window(self, window: Any, locator: Dict[str, Any]) -> Any:
