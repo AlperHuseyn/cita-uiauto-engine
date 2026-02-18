@@ -46,6 +46,7 @@ class BaseCommandForm(QWidget):
         super().__init__(parent)
         self._is_running = False
         self._widgets: Dict[str, QWidget] = {}
+        self._widgets_enabled_before_run: set[str] = set()
         self._build_ui()
         self._connect_signals()
     
@@ -255,14 +256,29 @@ class BaseCommandForm(QWidget):
         Args:
             is_running: True if command is executing
         """
+        if self._is_running == is_running:
+            return
+        
         self._is_running = is_running
         self._run_btn.setEnabled(not is_running)
         self._validate_btn.setEnabled(not is_running)
         
-        # Disable all input widgets
-        for widget in self._widgets.values():
-            if hasattr(widget, 'setEnabled'):
-                widget.setEnabled(not is_running)
+        if is_running:
+            self._widgets_enabled_before_run = {
+                name
+                for name, widget in self._widgets.items()
+                if hasattr(widget, "setEnabled") and widget.isEnabled()
+            }
+
+            for name in self._widgets_enabled_before_run:
+                self._widgets[name].setEnabled(False)
+        else:
+            for name in self._widgets_enabled_before_run:
+                widget = self._widgets.get(name)
+                if widget is not None and hasattr(widget, "setEnabled"):
+                    widget.setEnabled(True)
+
+            self._widgets_enabled_before_run.clear()
     
     def get_values(self) -> Dict[str, Any]:
         """
