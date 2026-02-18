@@ -123,23 +123,6 @@ class RunForm(BaseCommandForm):
         self._register_widget("report", self._report_path)
         options_layout.addRow("Report:", self._report_path)
         
-        self._verbose_cb = QCheckBox("Verbose output")
-        self._verbose_cb.stateChanged.connect(self._on_inputs_changed)
-        self._register_widget("verbose", self._verbose_cb)
-        options_layout.addRow("", self._verbose_cb)
-
-        self._action_logging_cb = QCheckBox("Live Action Logging")
-        self._action_logging_cb.setToolTip("Stream action logs during scenario execution")
-        self._action_logging_cb.stateChanged.connect(self._on_action_logging_toggled)
-        self._register_widget("action-logging", self._action_logging_cb)
-        options_layout.addRow("", self._action_logging_cb)
-
-        self._timing_logging_cb = QCheckBox("Timing Debug Logs")
-        self._timing_logging_cb.setToolTip("Show wait/retry timing events in output (dev mode)")
-        self._timing_logging_cb.stateChanged.connect(self._on_timing_logging_toggled)
-        self._register_widget("timing-logging", self._timing_logging_cb)
-        options_layout.addRow("", self._timing_logging_cb)
-        
         self._main_layout.addWidget(options_group)
         
         # === Advanced Section (Collapsible) ===
@@ -147,18 +130,6 @@ class RunForm(BaseCommandForm):
             "Advanced Settings", 
             collapsed=True
         )
-        
-        # Timeout
-        self._timeout_spin = QDoubleSpinBox()
-        self._timeout_spin.setRange(0, 300)
-        self._timeout_spin.setDecimals(1)
-        self._timeout_spin.setSingleStep(1.0)
-        self._timeout_spin.setSpecialValueText("Default")
-        self._timeout_spin.setValue(0)
-        self._timeout_spin.setToolTip("Override default timeout in seconds")
-        self._timeout_spin.valueChanged.connect(self._on_inputs_changed)
-        self._register_widget("timeout", self._timeout_spin)
-        advanced_layout.addRow("Timeout (s):", self._timeout_spin)
         
         # Preset flags
         preset_layout = QHBoxLayout()
@@ -195,16 +166,33 @@ class RunForm(BaseCommandForm):
 
         preset_layout.addStretch()
         advanced_layout.addRow("Preset:", preset_layout)
-        
-        # Schema path
-        self._schema_path = PathSelector(
-            mode="file",
-            file_filter="JSON Files (*.json);;All Files (*)",
-            placeholder="Custom scenario schema"
-        )
-        self._schema_path.path_changed.connect(self._on_inputs_changed)
-        self._register_widget("schema", self._schema_path)
-        advanced_layout.addRow("Schema:", self._schema_path)
+
+        # Logging options
+        logging_row = QHBoxLayout()
+
+        self._verbose_cb = QCheckBox("Verbose output")
+        self._verbose_cb.stateChanged.connect(self._on_inputs_changed)
+        self._register_widget("verbose", self._verbose_cb)
+
+        self._action_logging_cb = QCheckBox("Live Action")
+        self._action_logging_cb.setToolTip("Stream action logs during scenario execution")
+        self._action_logging_cb.stateChanged.connect(self._on_action_logging_toggled)
+        self._register_widget("action-logging", self._action_logging_cb)
+
+        self._timing_logging_cb = QCheckBox("Timings")
+        self._timing_logging_cb.setToolTip("Show wait/retry timing events in output (dev mode)")
+        self._timing_logging_cb.stateChanged.connect(self._on_timing_logging_toggled)
+        self._register_widget("timing-logging", self._timing_logging_cb)
+
+        logging_row.addWidget(self._verbose_cb)
+        logging_row.addWidget(self._action_logging_cb)
+        logging_row.addWidget(self._timing_logging_cb)
+        logging_row.addStretch()
+
+        logging_container = QWidget()
+        logging_container.setLayout(logging_row)
+
+        advanced_layout.addRow("Logging:", logging_container)
         
         # Vars file
         self._vars_path = PathSelector(
@@ -246,7 +234,7 @@ class RunForm(BaseCommandForm):
         return btn
     
     def _collect_values(self) -> Dict[str, Any]:
-        """Collect all form values."""
+        """Collect all form values from currently available widgets."""
         values = {
             "elements": self._elements_path.value(),
             "scenario": self._scenario_path.value() if self._mode == "single" else "",
@@ -254,15 +242,22 @@ class RunForm(BaseCommandForm):
             "app": self._app_path.value(),
             "report": self._report_path.value(),
             "verbose": self._verbose_cb.isChecked(),
-            "schema": self._schema_path.value(),
-            "vars": self._vars_path.value(),
-            "var": self._var_table.values(),
+            "action-logging": self._action_logging_cb.isChecked(),
+            "timing-logging": self._timing_logging_cb.isChecked(),
+            "vars": self._vars_path.value() if hasattr(self, "_vars_path") else "",
+            "var": self._var_table.values() if hasattr(self, "_var_table") else {},
         }
         
-        # Timeout: only include if > 0
-        timeout = self._timeout_spin.value()
-        if timeout > 0:
-            values["timeout"] = timeout
+        # Optional fields: include only when widgets exist.
+        schema_widget = getattr(self, "_schema_path", None)
+        if schema_widget is not None:
+            values["schema"] = schema_widget.value()
+
+        timeout_widget = getattr(self, "_timeout_spin", None)
+        if timeout_widget is not None:
+            timeout = timeout_widget.value()
+            if timeout > 0:
+                values["timeout"] = timeout
         
         # Mode flags
         if self._preset_ci_rb.isChecked():
@@ -275,13 +270,17 @@ class RunForm(BaseCommandForm):
         return values
 
     def _collect_validate_values(self) -> Dict[str, Any]:
-        """Collect values for validate command."""
+        """Collect values for validate command from currently available widgets."""
         values = {
             "elements": self._elements_path.value(),
             "scenario": self._scenario_path.value() if self._mode == "single" else "",
             "scenarios-dir": self._scenarios_dir.value() if self._mode == "bulk" else "",
-            "schema": self._schema_path.value(),
         }
+
+        schema_widget = getattr(self, "_schema_path", None)
+        if schema_widget is not None:
+            values["schema"] = schema_widget.value()
+
         return values
     
     def set_values(self, values: Dict[str, Any]) -> None:
@@ -298,8 +297,15 @@ class RunForm(BaseCommandForm):
             self._report_path.set_value(values["report"])
         if "verbose" in values:
             self._verbose_cb.setChecked(values["verbose"])
-        if "timeout" in values:
-            self._timeout_spin.setValue(values["timeout"])
+        if "action-logging" in values:
+            self._action_logging_cb.setChecked(values["action-logging"])
+        if "timing-logging" in values:
+            self._timing_logging_cb.setChecked(values["timing-logging"])
+        
+        timeout_widget = getattr(self, "_timeout_spin", None)
+        if "timeout" in values and timeout_widget is not None:
+            timeout_widget.setValue(values["timeout"])
+
         if values.get("ci"):
             self._preset_ci_rb.setChecked(True)
         elif values.get("slow"):
@@ -308,11 +314,14 @@ class RunForm(BaseCommandForm):
             self._preset_fast_rb.setChecked(True)
         else:
             self._preset_default_rb.setChecked(True)
-        if "schema" in values:
-            self._schema_path.set_value(values["schema"])
-        if "vars" in values:
+        
+        schema_widget = getattr(self, "_schema_path", None)
+        if "schema" in values and schema_widget is not None:
+            schema_widget.set_value(values["schema"])
+        
+        if "vars" in values and hasattr(self, "_vars_path"):
             self._vars_path.set_value(values["vars"])
-        if "var" in values:
+        if "var" in values and hasattr(self, "_var_table"):
             self._var_table.set_values(values["var"])
 
         self._set_mode("bulk" if self._scenarios_dir.value() else "single", clear_other=False)
@@ -329,12 +338,22 @@ class RunForm(BaseCommandForm):
         self._verbose_cb.setChecked(False)
         self._action_logging_cb.setChecked(False)
         self._timing_logging_cb.setChecked(False)
-        self._timeout_spin.setValue(0)
-        self._preset_default_rb.setChecked(True)
         
-        self._schema_path.clear()
-        self._vars_path.clear()
-        self._var_table.clear()
+        timeout_widget = getattr(self, "_timeout_spin", None)
+        if timeout_widget is not None:
+            timeout_widget.setValue(0)
+
+        self._preset_default_rb.setChecked(True)
+
+        schema_widget = getattr(self, "_schema_path", None)
+        if schema_widget is not None:
+            schema_widget.clear()
+
+        if hasattr(self, "_vars_path"):
+            self._vars_path.clear()
+        if hasattr(self, "_var_table"):
+            self._var_table.clear()
+        
         self._set_mode("single", clear_other=True)
         self._invalidate_validation()
         self._update_preview()
@@ -370,9 +389,6 @@ class RunForm(BaseCommandForm):
         if settings_service.load_action_logging_enabled():
             self._action_logging_cb.setChecked(True)
         
-        if settings_service.load_timing_logging_enabled():
-            self._timing_logging_cb.setChecked(True)
-        
         app = settings_service.load_last_app()
         if app:
             self._app_path.set_value(app)
@@ -403,7 +419,6 @@ class RunForm(BaseCommandForm):
             settings_service.save_last_report(report)
         
         settings_service.save_action_logging_enabled(self._action_logging_cb.isChecked())
-        settings_service.save_timing_logging_enabled(self._timing_logging_cb.isChecked())
         
         app = self._app_path.value()
         if app:
