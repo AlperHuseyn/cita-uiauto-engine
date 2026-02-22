@@ -5,6 +5,7 @@ Recording module for capturing user interactions into semantic YAML steps.
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import re
@@ -13,6 +14,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 import yaml
+
+from .overlay import OverlayController
 
 try:
     from pynput import keyboard, mouse
@@ -40,13 +43,8 @@ except ImportError:
 
 from pywinauto import Desktop
 
-from . inspector import (
-    extract_control_info,
-    _normalize_key,
-    _make_locator_candidates,
-    _safe,
-)
-
+from .inspector import (_make_locator_candidates, _normalize_key, _safe,
+                        extract_control_info)
 
 # Constants
 MODIFIER_KEY_NAMES = frozenset([
@@ -248,6 +246,7 @@ class Recorder:
         debug_json_out:  Optional[str] = None,
         backend: str = "uia",
         merge:  bool = True,
+
     ):
         if not PYNPUT_AVAILABLE: 
             raise ImportError(
@@ -267,13 +266,13 @@ class Recorder:
         self._window_title_rx = re.compile(window_title_re) if window_title_re else None
         self.window_name = window_name
         self.state = state
-        self. debug_json_out = debug_json_out
-        self. backend = backend
+        self.debug_json_out = debug_json_out
+        self.backend = backend
         self.merge = merge
 
         self.steps: List[Dict[str, Any]] = []
-        self. elements_cache: Dict[str, Dict[str, Any]] = {}
-        self. debug_snapshots: List[Dict[str, Any]] = []
+        self.elements_cache: Dict[str, Dict[str, Any]] = {}
+        self.debug_snapshots: List[Dict[str, Any]] = []
         
         # Typing state tracking
         self._typing_element_key: Optional[str] = None
@@ -313,6 +312,12 @@ class Recorder:
         # Target window cache
         self._target_window = None
         self._target_window_handle = None
+
+        # Overlay
+        self._overlay = OverlayController()
+        self._hover_thread = None
+        self._hover_running = False
+
 
     def _get_desktop(self) -> Desktop:
         """Get or create cached Desktop instance."""
@@ -385,6 +390,13 @@ class Recorder:
         _print("🎬 Recording started.  Interact with the application.")
         _print(f"   Press {stop_hotkey_str} to stop recording (or Ctrl+C in console).")
         self._recording = True
+
+        # Start overlay
+        self._overlay.start()
+        self._hover_running = True
+        self._hover_thread = threading.Thread(target=self._hover_loop, daemon=True)
+        self._hover_thread.start()
+
         self._stopping = False
         self._stop_requested = False
         self._pending_stop_hotkey = False
@@ -417,6 +429,9 @@ class Recorder:
         self._stopping = True
         self._recording = False
         self._stop_event.set()
+
+        self._hover_running = False
+        self._overlay.stop()
         
         self._flush_typing()
         self._remove_stop_hotkey_from_steps()
@@ -437,7 +452,11 @@ class Recorder:
                 except Exception:
                     pass
         
-        _print(f"✅ Recording stopped.  Captured {len(self. steps)} steps.")
+        # Stop overlay
+        self._hover_running = False
+        self._overlay.stop()
+
+        _print(f"✅ Recording stopped.  Captured {len(self.steps)} steps.")
 
     def _remove_stop_hotkey_from_steps(self) -> None:
         """Remove any stop hotkey steps that were accidentally recorded."""
@@ -454,7 +473,7 @@ class Recorder:
         alt_patterns = [stop_hotkey_pattern, "^%@", "^%q", "^%Q"]
         
         while self.steps:
-            last_step = self. steps[-1]
+            last_step = self.steps[-1]
             if "hotkey" in last_step:
                 keys = last_step["hotkey"].get("keys", "")
                 if keys in alt_patterns: 
@@ -520,7 +539,7 @@ class Recorder:
 
     def save_scenario(self, out_path: Optional[str] = None) -> str:
         """Save recorded steps to scenario YAML, merging with existing if present."""
-        out_path = out_path or self. scenario_out_path
+        out_path = out_path or self.scenario_out_path
         if not out_path: 
             raise ValueError("No scenario output path specified")
         
@@ -551,7 +570,7 @@ class Recorder:
             f.write(fixed_yaml)
         
         _print(f"📝 Scenario saved to:  {out_path}")
-        _print(f"    Total steps: {len(all_steps)} ({len(existing_steps)} existing + {len(self. steps)} new)")
+        _print(f"    Total steps: {len(all_steps)} ({len(existing_steps)} existing + {len(self.steps)} new)")
         return out_path
 
     def save_elements(self) -> str:
@@ -568,7 +587,7 @@ class Recorder:
         windows_block = existing.get("windows", {})
         if self.window_name not in windows_block: 
             title_re = self.window_title_re if self.window_title_re else ".*"
-            windows_block[self. window_name] = {
+            windows_block[self.window_name] = {
                 "locators": [{"title_re": title_re}]
             }
         
@@ -610,7 +629,7 @@ class Recorder:
 
     def save_debug_snapshots(self) -> Optional[str]:
         """Save debug JSON snapshots if enabled."""
-        if not self.debug_json_out or not self. debug_snapshots: 
+        if not self.debug_json_out or not self.debug_snapshots: 
             return None
         
         out_path = os. path.abspath(self.debug_json_out)
@@ -640,7 +659,7 @@ class Recorder:
                         0, "Message", "UIAutoRecorder", 0,
                         0, 0, 0, 0, HWND_MESSAGE, None, hinstance, None
                     )
-                    if hwnd and self. debug_json_out:
+                    if hwnd and self.debug_json_out:
                         _print(f"  Debug:  Created message-only window (HWND: {hwnd})")
                 except Exception as e:
                     if self.debug_json_out:
@@ -670,7 +689,7 @@ class Recorder:
                         _print(f"\n  🛑 Stop hotkey detected ({hotkey_str})")
                         self._stop_requested = True
                         self._stopping = True
-                        self. stop()
+                        self.stop()
                         break
                     else:
                         TranslateMessage(ctypes.byref(msg))
@@ -721,18 +740,23 @@ class Recorder:
                 if self.debug_json_out: 
                     _print(f"  Debug:  Click at ({x}, {y}): Could not identify element")
                 _print(f"  ⚠️  Click:  Could not identify element at ({x}, {y})")
+
+                self._overlay.error([x-20, y-20, x+20, y+20])
                 return
-            
+
             elem_key = self._ensure_element(element_info)
             
             self._last_clicked_element_info = element_info
             self._last_clicked_element_key = elem_key
             
-            self. steps.append({"click": {"element": elem_key}})
+            self.steps.append({"click": {"element": elem_key}})
             self._last_action_time = time.time()
             
             _print(f"  🖱️  Click: {elem_key}")
-            
+            rect = element_info.get("rect")
+            if rect:
+                self._overlay.click(rect)
+
         except Exception as e: 
             if self.debug_json_out: 
                 _print(f"  Debug: Failed to capture click: {type(e).__name__}: {e}")
@@ -777,7 +801,7 @@ class Recorder:
                 hotkey_str = self._format_hotkey(key)
                 if hotkey_str:
                     self._flush_typing()
-                    self. steps.append({"hotkey": {"keys": hotkey_str}})
+                    self.steps.append({"hotkey": {"keys": hotkey_str}})
                     self._last_action_time = time.time()
                     _print(f"  ⌨️  Hotkey: {hotkey_str}")
                     return
@@ -854,7 +878,7 @@ class Recorder:
             
             if not element_info and self._last_clicked_element_info:
                 element_info = self._last_clicked_element_info
-                if self. debug_json_out:
+                if self.debug_json_out:
                     _print("  Debug: Using last clicked element as typing target")
             
             if not element_info: 
@@ -863,7 +887,11 @@ class Recorder:
                 return
             
             elem_key = self._ensure_element(element_info)
-            
+
+            rect = element_info.get("rect")
+            if rect:
+                self._overlay.typing(rect)
+
             with self._typing_lock:
                 if self._typing_element_key and self._typing_element_key != elem_key: 
                     self._flush_typing_unsafe()
@@ -873,7 +901,7 @@ class Recorder:
                 self._last_action_time = time.time()
             
         except Exception as e: 
-            if self. debug_json_out:
+            if self.debug_json_out:
                 _print(f"  Debug:  Failed to capture typing:  {type(e).__name__}: {e}")
 
     def _handle_special_key(self, key_name: str) -> None:
@@ -893,7 +921,11 @@ class Recorder:
                 return
             
             elem_key = self._ensure_element(element_info)
-            
+
+            rect = element_info.get("rect")
+            if rect:
+                self._overlay.typing(rect)
+
             with self._typing_lock:
                 if self._typing_element_key == elem_key: 
                     self._typing_buffer.append(special_key_str)
@@ -1176,6 +1208,30 @@ class Recorder:
             
         except Exception: 
             return None
+
+    # =========================================================
+    # Hover Overlay Loop
+    # =========================================================
+
+    def _hover_loop(self):
+        user32 = ctypes.windll.user32
+        point = ctypes.wintypes.POINT()
+
+        while self._hover_running and self._recording:
+            try:
+                user32.GetCursorPos(ctypes.byref(point))
+                x, y = point.x, point.y
+
+                element_info = self._capture_element_at_point(x, y)
+                if element_info:
+                    rect = element_info.get("rect")
+                    if rect:
+                        self._overlay.hover(rect)
+            except:
+                pass
+
+            time.sleep(0.03)
+
 
 
 def record_session(
