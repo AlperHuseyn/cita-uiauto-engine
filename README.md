@@ -78,20 +78,7 @@ The engine exposes action-specific timing parameters via `TimeConfig` and
 
 1. Code defaults (Timings.default)
 2. Preset selection (fast/slow/ci)
-3. CLI overrides (e.g., `--timeout`, `--fast`, `--ci`)
-4. `elements.yaml` app timings overrides
-5. Context manager overrides (`TimeConfig.override(...)`)
-
-**Elements.yaml example:**
-
-```yaml
-app:
-  timings:
-    element_wait_timeout: 12
-    after_click_wait: 0.05
-    window_find_timeout: 5.0
-    after_sendkeys_key_wait: 0.02
-```
+3. CLI overrides (e.g., `--fast`, `--ci`)
 
 **Python usage:**
 
