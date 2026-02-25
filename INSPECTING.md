@@ -1,4 +1,4 @@
-# Inspecting UI (`uiauto inspect`)
+# Inspecting UI (`python -m uiauto.cli inspect`)
 
 `uiauto inspect` scans visible desktop windows (UIA) and dumps control information to help you build or troubleshoot `elements.yaml`.
 
@@ -8,6 +8,13 @@ Useful for:
 - Identifying `control_type`, `class_name`, `auto_id`
 - Generating candidate locators
 - Emitting starter `elements.yaml` with optional merging
+
+## What it outputs
+
+By default:
+
+- `reports/inspect_<timestamp>.json`
+- `reports/inspect_<timestamp>.txt`
 
 ## Basic Usage
 
@@ -32,22 +39,24 @@ python -m uiauto.cli inspect `
 
 Selection behavior:
 
-- Lists visible windows
-- If `--window-title-re` matches, picks first match
-- Otherwise uses first visible window
+- Enumerates visible windows
+- Uses first title match if `--window-title-re` is provided
+- Falls back to first visible window
 
-## Filter Controls
+## Filter Controls (`--query`)
 
-`--query` filters by case-insensitive substring across: name, title, auto_id, control_type, class_name, path.
+Searches across: `name`, `title`, `auto_id`, `control_type`, `class_name`, `path`.
+
+Substring search:
 
 ```bash
 python -m uiauto.cli inspect --query "login" --out reports
 ```
 
-Regex search:
+Regex search (must start with `regex:`):
 
 ```bash
-python -m uiauto.cli inspect --query "regex: (? i)button" --out reports
+python -m uiauto.cli inspect --query "regex:(?i)button" --out reports
 ```
 
 ## Performance Options

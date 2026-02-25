@@ -1,6 +1,9 @@
-# Recording User Interactions
+# Recording User Interactions (`python -m uiauto.cli record`)
 
-The `uiauto record` command captures user interactions with a Windows application and generates semantic YAML scenarios compatible with `uiauto run`.
+record` captures live user interactions and generates:
+
+- scenario YAML (`steps:` with semantic actions)
+- updated `elements.yaml` entries for discovered controls
 
 ## Features
 

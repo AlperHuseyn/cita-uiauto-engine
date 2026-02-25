@@ -1,4 +1,4 @@
-# Desktop GUI Application
+# Desktop GUI Application (`uiauto_ui`)
 
 `uiauto_ui` provides a user-friendly graphical interface for all `uiauto` CLI commands, built with PySide6 (Qt).
 
@@ -45,13 +45,12 @@ main()
 
 The GUI provides forms for all CLI commands:
 
-| Tab           | Command                | Description                  |
-| ------------- | ---------------------- | ---------------------------- |
-| Run           | `uiauto run`           | Execute YAML scenarios       |
-| Inspect       | `uiauto inspect`       | Analyze UI elements          |
-| Record        | `uiauto record`        | Capture user interactions    |
-| Validate      | `uiauto validate`      | Validate configuration files |
-| List Elements | `uiauto list-elements` | List defined elements        |
+| Tab      | Command           | Description                  |
+| -------- | ----------------- | ---------------------------- |
+| Run      | `uiauto run`      | Execute YAML scenarios       |
+| Inspect  | `uiauto inspect`  | Analyze UI elements          |
+| Record   | `uiauto record`   | Capture user interactions    |
+| Validate | `uiauto validate` | Validate configuration files |
 
 ## GUI Components
 
@@ -69,12 +68,9 @@ Execute scenarios with full control over:
 
 **Advanced Options:**
 
-- Schema path: Custom scenario schema
 - Variables file: JSON file with variables
 - Key-value variables: Manual variable input
-- Timeout override: Custom timeout value
-- CI mode: CI-optimized settings
-- Fast mode: Local development settings
+- Timeout presets: `--fast`, `--slow`, `--ci` and `--default`
 
 ### Inspect Form
 

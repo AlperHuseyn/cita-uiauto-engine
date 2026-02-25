@@ -1,116 +1,107 @@
 # uiauto-engine
 
-A keyword-driven, object-mapped UI automation engine for desktop applications.
+Windows-focused UI automation engine for desktop applications, with:
 
-Python package: `uiauto`  
-CLI: `uiauto run ...`, `uiauto inspect ...`, `uiauto record ...`  
-Desktop GUI: `uiauto_ui`
+- a Python core package (`uiauto`)
+- a CLI (`python -m uiauto.cli`)
+- an optional PySide6 desktop GUI (`main_ui.py` or `python -m uiauto_ui.app`)
 
-## Features
+> This repository currently does **not** include packaging metadata (`pyproject.toml`/`setup.py`), so commands in this documentation use `python -m ...` from the repo root.
 
-- **Run**: Execute YAML scenarios using object map (elements.yaml)
-- **Inspect**: Analyze UI elements and generate object maps
-- **Record**: Capture user interactions and generate semantic YAML scenarios
-- **Desktop GUI**: User-friendly graphical interface for all CLI commands
+## What it does
 
-## Installation
+- Executes YAML scenarios against UI elements defined in `elements.yaml`
+- Inspects live UI Automation trees and exports reports / starter object maps
+- Records user actions (click/type/hotkey) into semantic scenarios
+- Validates object maps and scenarios without executing them
+- Lists windows/elements defined in an object map
 
-### Core Package
+## Repository structure
 
-```bash
-pip install -e .
+```text
+cita-uiauto-engine/
+├── uiauto/                     # Core engine, CLI, schema, recorder/inspector
+├── uiauto_ui/                  # Optional PySide6 desktop UI
+├── tests/                      # Unit tests (currently waits utilities)
+├── README.md
+├── RUNNING.md                  # `run`, `validate`, `list-elements`
+├── INSPECTING.md               # `inspect`
+├── RECORDING.md                # `record`
+└── GUI.md                      # Desktop GUI usage
 ```
 
-### With GUI Support
+## Requirements
+
+- **OS:** Windows (UI automation/runtime features rely on UIA/Win32)
+- **Python:** 3.8+
+- **Core dependencies used by code:** `pywinauto`, `PyYAML`, `jsonschema`, `Pillow`
+- **Recorder optional dependencies:** `pynput`, `comtypes`
+- **GUI dependencies:** `PySide6`, `qt-material`
+- **Optional GUI theming:** `pyqtdarktheme`
+
+## Installation (repo-local)
+
+Install runtime dependencies manually:
 
 ```bash
-pip install -e ".[gui]"
+pip install pywinauto pyyaml jsonschema pillow
 ```
 
-### With Recording Support
+Optional recorder extras:
 
 ```bash
 pip install pynput comtypes
 ```
 
-## Quick Start
-
-### Using CLI
+Optional GUI extras:
 
 ```bash
-# Run a scenario
-uiauto run --elements object-maps/elements.yaml --scenario scenarios/test.yaml
-
-# Inspect UI elements
-uiauto inspect --window-title-re "MyApp.*" --out reports
-
-# Record interactions
-uiauto record --elements object-maps/elements.yaml --scenario-out scenarios/recorded.yaml
+pip install -r requirements-ui.txt
+# optional theme support
+pip install pyqtdarktheme
 ```
 
-### Using Desktop GUI
+## CLI quick start
 
 ```bash
-# Launch the GUI application
-python -m uiauto_ui
+# Run one scenario
+python -m uiauto.cli run `
+  --elements object-maps/elements.yaml `
+  --scenario scenarios/test.yaml
+
+# Inspect desktop UI and write JSON/TXT reports
+python -m uiauto.cli inspect --out reports
+
+# Record interactions (Ctrl+Alt+Q to stop)
+python -m uiauto.cli record `
+  --elements object-maps/elements.yaml `
+  --scenario-out scenarios/recorded.yaml
+
+# Validate files without execution
+python -m uiauto.cli validate `
+  --elements object-maps/elements.yaml `
+  --scenario scenarios/test.yaml
+
+# List windows and elements in object map
+python -m uiauto.cli list-elements --elements object-maps/elements.yaml
 ```
 
-Or from Python:
+## GUI quick start
 
-```python
-from uiauto_ui import main
-main()
+```bash
+python main_ui.py
+# or
+python -m uiauto_ui.app
 ```
 
-## Documentation
+## Documentation map
 
-See [RUNNING.md](RUNNING.md) for details on the run feature.  
-See [INSPECTING.md](INSPECTING.md) for details on the inspect feature.  
-See [RECORDING.md](RECORDING.md) for details on the recording feature.  
-See [GUI.md](GUI.md) for details on the desktop GUI application.
+- [RUNNING.md](RUNNING.md) — run/validate/list-elements usage, keywords, exit codes
+- [INSPECTING.md](INSPECTING.md) — inspector output and YAML emission
+- [RECORDING.md](RECORDING.md) — recorder behavior and limitations
+- [GUI.md](GUI.md) — PySide6 desktop interface
 
-## Timings & TimeConfig
+## Notes on current implementation
 
-The engine exposes action-specific timing parameters via `TimeConfig` and
-`Timings`. Presets are available for **default**, **fast**, **slow**, and **ci**.
-
-**Override precedence (lowest → highest):**
-
-1. Code defaults (Timings.default)
-2. Preset selection (fast/slow/ci)
-3. CLI overrides (e.g., `--fast`, `--ci`)
-
-**Python usage:**
-
-```python
-from uiauto.config import TimeConfig
-
-TimeConfig.apply_preset("slow")
-with TimeConfig.override():
-    # thread-local overrides
-    pass
-```
-
-**Reference-style keys:** The timings layer accepts pywinauto-style keys such as
-`window_find_timeout`, `window_find_retry`, `after_sendkeys_key_wait`, and
-`after_comboboxselect_wait`. These are kept in sync with engine-specific aliases
-(`window_wait_*`, `resolve_window_*`, `send_keys_pause`, `after_select_wait`,
-`exists_interval`) to preserve backward compatibility.
-
-## Project Structure
-
-```
-cita-uiauto-engine/
-├── uiauto/                 # Core automation engine
-│   ├── actions.py          # Keyword action library
-│   ├── runner.py           # Scenario runner
-│   ├── cli.py              # Command-line interface
-│   └── schemas/            # JSON schemas for validation
-├── uiauto_ui/              # Desktop GUI application
-│   ├── app.py              # Main application window
-│   ├── commands.py         # CLI command specifications
-│   └── status_mapping.py   # Return code to status mapping
-├── object-maps/            # Element definitions (elements.yaml)
-├── scenarios/              # Test scenario files
-└── reports/                # Output reports and artifacts
-```
+- `run` supports single scenario (`--scenario`) and bulk execution (`--scenarios-dir`).
+- Timing presets are available via `--fast`, `--slow`, `--ci` and `--default`.

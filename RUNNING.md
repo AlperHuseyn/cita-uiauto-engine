@@ -1,6 +1,10 @@
 # Running Scenarios (`uiauto run`)
 
-`uiauto run` executes a YAML scenario (steps) using an object map (`elements.yaml`).
+This document covers:
+
+- `python -m uiauto.cli run`
+- `python -m uiauto.cli validate`
+- `python -m uiauto.cli list-elements`
 
 ## Requirements
 
@@ -22,8 +26,6 @@ Example:
 ```yaml
 app:
   backend: uia
-  default_timeout: 10
-  polling_interval: 0.2
   artifacts_dir: artifacts
 
 windows:
@@ -94,6 +96,16 @@ python -m uiauto.cli run `
   --elements object-maps/elements.yaml `
   --scenario scenarios/scenario.yaml `
   --report report.json
+```
+
+or in bulk mode (`--scenarios-dir`):
+
+```bash
+python -m uiauto.cli run `
+  --elements object-maps/elements.yaml `
+  --scenarios-dir scenarios `
+  --report reports/report.json `
+  --summary-json reports/summary.json
 ```
 
 ### Exit Codes
