@@ -176,6 +176,135 @@ def _configure_timing_logger_from_env() -> None:
     TIMING_LOGGER.enable()
 
 
+def _run_with_pytest_allure(args: argparse.Namespace) -> int:
+    """
+    Execute scenarios via pytest + allure-pytest (triggered by ``--allure-dir``).
+
+    Generates temporary pytest test files, runs pytest as a subprocess with
+    ``--alluredir``, then invokes ``allure generate`` to produce the HTML report.
+    Streams pytest output directly to stdout so that the terminal experience
+    mirrors what the GUI sees.
+
+    Returns the pytest exit code (0 = all passed, non-zero = failures or error).
+    """
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    # --- resolve scenario paths and variables (same as traditional path) ---
+    scenario_paths = _resolve_scenario_paths(args.scenario, args.scenarios_dir, args.elements)
+    if not scenario_paths:
+        print("Error: no scenario files found", file=sys.stderr)
+        return 1
+
+    timing_preset, _ = _resolve_timing_options(args)
+
+    variables: Dict[str, Any] = {}
+    if args.vars:
+        try:
+            with open(args.vars, "r", encoding="utf-8") as fh:
+                variables = json.load(fh)
+            if not isinstance(variables, dict):
+                raise ValueError("--vars must be a JSON object mapping")
+        except Exception as e:
+            print(f"Error loading vars file: {e}", file=sys.stderr)
+            return 1
+    for var_spec in args.var or []:
+        if "=" in var_spec:
+            key, value = var_spec.split("=", 1)
+            variables[key.strip()] = value.strip()
+
+    allure_report_dir = os.path.abspath(args.allure_dir)
+
+    # --- import generate_pytest_files from uiauto_ui ---
+    try:
+        from uiauto_ui.pytest_runner import generate_pytest_files
+    except ImportError:
+        print(
+            "Error: uiauto_ui package is required for --allure-dir. "
+            "Install it with: pip install -r requirements-ui.txt",
+            file=sys.stderr,
+        )
+        return 1
+
+    # --- create temp dir and generate test files ---
+    temp_dir = tempfile.mkdtemp(prefix="cita_pytest_cli_")
+    allure_results_dir = os.path.join(temp_dir, "allure-results")
+    os.makedirs(allure_results_dir, exist_ok=True)
+
+    try:
+        test_file = generate_pytest_files(
+            elements_path=os.path.abspath(args.elements),
+            scenario_paths=scenario_paths,
+            schema_path=os.path.abspath(args.schema),
+            timing_preset=timing_preset,
+            variables=variables,
+            output_dir=temp_dir,
+        )
+    except Exception as e:
+        print(f"Error generating test files: {e}", file=sys.stderr)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return 1
+
+    # --- run pytest ---
+    scenario_names = ", ".join(os.path.basename(p) for p in scenario_paths)
+    separator = "\u2550" * 55
+    print(separator)
+    print(f"\U0001f9ea pytest + allure: {scenario_names}")
+    print(separator)
+
+    pytest_cmd = [
+        sys.executable,
+        "-m", "pytest",
+        test_file,
+        f"--alluredir={allure_results_dir}",
+        "-v",
+        "--tb=short",
+        "-s",
+    ]
+
+    try:
+        pytest_proc = subprocess.run(pytest_cmd)
+        pytest_rc = pytest_proc.returncode
+    except Exception as e:
+        print(f"Error running pytest: {e}", file=sys.stderr)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return 1
+
+    # --- generate allure HTML report ---
+    allure_cmd = shutil.which("allure")
+    if allure_cmd is None:
+        print(
+            f"[INFO] Install allure CLI to generate HTML reports. "
+            f"Raw results at: {allure_results_dir}"
+        )
+    else:
+        try:
+            os.makedirs(allure_report_dir, exist_ok=True)
+            gen_result = subprocess.run(
+                [allure_cmd, "generate", allure_results_dir, "-o", allure_report_dir, "--clean"],
+                capture_output=True,
+                text=True,
+            )
+            if gen_result.returncode == 0:
+                report_index = os.path.join(allure_report_dir, "index.html")
+                report_url = Path(report_index).as_uri()
+                print(f"[ALLURE REPORT] {report_url}")
+            else:
+                print(
+                    f"[WARNING] allure report generation failed: {gen_result.stderr.strip()}",
+                    file=sys.stderr,
+                )
+                print(f"[INFO] Raw allure results at: {allure_results_dir}")
+        except Exception as e:
+            print(f"[WARNING] Could not generate allure report: {e}", file=sys.stderr)
+            print(f"[INFO] Raw allure results at: {allure_results_dir}")
+
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    return pytest_rc
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
     argv = argv or sys.argv[1:]
@@ -206,6 +335,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     runp.add_argument("--slow", action="store_true", help="Use slow timeout settings for unstable environments")
     runp.add_argument("--verbose", action="store_true", help="Show detailed step output")
     runp.add_argument("--summary-json", default=None, help="Optional output path for combined bulk summary (JSON)")
+    runp.add_argument(
+        "--allure-dir",
+        dest="allure_dir",
+        default=None,
+        help=(
+            "Enable pytest+allure execution and write the HTML report to this "
+            "directory. When omitted the traditional runner is used."
+        ),
+    )
 
     # -------------------------
     # inspect
@@ -261,6 +399,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not args.scenario and not args.scenarios_dir:
             print("Error: one of --scenario or --scenarios-dir is required", file=sys.stderr)
             return 1
+
+        # --allure-dir triggers the pytest+allure execution path
+        if args.allure_dir:
+            return _run_with_pytest_allure(args)
 
         # Clear any stale action context
         ActionContextManager.clear()

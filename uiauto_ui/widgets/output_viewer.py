@@ -7,14 +7,17 @@ Supports timestamped output, auto-scroll, and status display.
 from datetime import datetime
 from typing import Optional
 
+from PySide6.QtCore import Qt, Signal, QUrl
+from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
-    QPushButton, QLabel, QApplication, QCheckBox
+    QApplication, QCheckBox, QHBoxLayout, QLabel, QPushButton,
+    QTextBrowser, QVBoxLayout, QWidget,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
 
 from ..status_mapping import StatusInfo, STATUS_READY
+
+# Prefix used by PytestExecutor to signal an Allure HTML report URL.
+_ALLURE_REPORT_PREFIX = "[ALLURE REPORT]"
 
 
 class OutputViewer(QWidget):
@@ -80,12 +83,14 @@ class OutputViewer(QWidget):
         
         layout.addLayout(header_layout)
         
-        # Output text area
-        self._output_text = QTextEdit()
+        # Output text area – QTextBrowser supports clickable hyperlinks
+        self._output_text = QTextBrowser()
         self._output_text.setReadOnly(True)
         self._output_text.setFont(QFont("Consolas", 10))
+        self._output_text.setOpenLinks(False)  # We handle link clicks ourselves
+        self._output_text.anchorClicked.connect(self._on_link_clicked)
         self._output_text.setStyleSheet("""
-            QTextEdit {
+            QTextBrowser {
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 border: 1px solid #333;
@@ -136,6 +141,10 @@ class OutputViewer(QWidget):
             color: {status.text_color};
         """
     
+    def _on_link_clicked(self, url: QUrl) -> None:
+        """Open a clicked hyperlink using the system's default application."""
+        QDesktopServices.openUrl(url)
+
     def _on_scroll_changed(self, value: int) -> None:
         """Handle scroll bar value changes."""
         scrollbar = self._output_text.verticalScrollBar()
@@ -192,13 +201,41 @@ class OutputViewer(QWidget):
         if self._auto_scroll and not self._user_scrolled:
             self._scroll_to_bottom()
     
+    def _append_allure_link(self, url: str) -> None:
+        """
+        Append a clickable Allure report link to the output.
+
+        Args:
+            url: File URL (``file:///...``) to the Allure index.html.
+        """
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        timestamp_color = self.COLORS["timestamp"]
+        link_color = self.COLORS["info"]
+        html = (
+            f'<span style="color: {timestamp_color}">[{timestamp}]</span> '
+            f'<a href="{url}" style="color: {link_color}; text-decoration: underline;">'
+            f'\U0001f4ca Open Allure Report: {url}'
+            f"</a>"
+        )
+        self._output_text.append(html)
+        if self._auto_scroll and not self._user_scrolled:
+            self._scroll_to_bottom()
+
     def append_line(self, text: str) -> None:
         """
         Append a plain line of output.
-        
+
+        When the line starts with ``[ALLURE REPORT]``, it is rendered as a
+        clickable hyperlink that opens the generated HTML report.
+
         Args:
             text: Text to append
         """
+        if text.startswith(_ALLURE_REPORT_PREFIX):
+            url = text[len(_ALLURE_REPORT_PREFIX):].strip()
+            self._append_allure_link(url)
+            return
+
         # Detect color from content
         lower = text.lower()
         if "[error]" in lower or "error:" in lower or "failed" in lower:
@@ -211,7 +248,7 @@ class OutputViewer(QWidget):
             color = "info"
         else:
             color = "default"
-        
+
         self.append_output(text, color)
     
     def set_status(self, status: StatusInfo) -> None:
