@@ -57,3 +57,6 @@ Thumbs.db
 # scenarios
 scenarios/
 scenarios/todo-app.yaml
+
+# allure reports
+allure-report/
