@@ -1,3 +1,5 @@
 # UI dependencies for cita-uiauto-engine
 PySide6>=6.5.0
 qt-material>=2.14
+pytest>=7.0.0
+allure-pytest>=2.13.0

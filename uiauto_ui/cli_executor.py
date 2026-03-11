@@ -310,6 +310,135 @@ class SubprocessExecutor(BaseExecutor):
             self._process = None
 
 
+def _parse_run_argv(argv: List[str]) -> Optional[object]:
+    """
+    Parse the ``run`` sub-command argv and return an argparse Namespace.
+
+    Uses ``parse_known_args`` so that unknown flags are silently ignored.
+    Returns *None* if parsing fails entirely.
+    """
+    import argparse
+
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--elements", "-e", default=None)
+    p.add_argument("--scenario", "-s", default=None)
+    p.add_argument("--scenarios-dir", dest="scenarios_dir", default=None)
+    p.add_argument("--schema", default=None)
+    p.add_argument("--vars", default=None)
+    p.add_argument("--var", "-v", action="append")
+    p.add_argument("--timeout", "-t", type=float, default=None)
+    p.add_argument("--ci", action="store_true")
+    p.add_argument("--fast", action="store_true")
+    p.add_argument("--slow", action="store_true")
+    p.add_argument("--allure-dir", dest="allure_dir", default=None)
+
+    # Strip the leading "run" command token if present
+    run_argv = argv[1:] if argv and argv[0] == "run" else argv
+
+    try:
+        args, _ = p.parse_known_args(run_argv)
+        return args
+    except SystemExit:
+        return None
+
+
+def _create_pytest_executor(
+    argv: List[str],
+    parent: Optional[QObject],
+) -> BaseExecutor:
+    """
+    Build a :class:`PytestExecutor` from a ``run`` command argv.
+
+    Falls back to :class:`SubprocessExecutor` when required information
+    (elements path, scenario paths) cannot be extracted from *argv*.
+    """
+    from pathlib import Path
+
+    from .pytest_runner import PytestExecutor
+
+    args = _parse_run_argv(argv)
+    if args is None or not getattr(args, "elements", None):
+        logger.warning(
+            "Could not parse --elements from argv; falling back to SubprocessExecutor"
+        )
+        return SubprocessExecutor(argv, parent)
+
+    # --- timing preset ---
+    timing_preset = "default"
+    if getattr(args, "ci", False):
+        timing_preset = "ci"
+    elif getattr(args, "fast", False):
+        timing_preset = "fast"
+    elif getattr(args, "slow", False):
+        timing_preset = "slow"
+
+    # --- variables ---
+    import json as _json
+
+    variables: dict = {}
+    if getattr(args, "vars", None):
+        try:
+            with open(args.vars, "r", encoding="utf-8") as fh:
+                variables = _json.load(fh)
+        except Exception as exc:
+            logger.warning(f"Could not load vars file: {exc}")
+    for var_spec in getattr(args, "var", None) or []:
+        if "=" in var_spec:
+            key, value = var_spec.split("=", 1)
+            variables[key.strip()] = value.strip()
+
+    # --- scenario paths ---
+    single = getattr(args, "scenario", None)
+    scenarios_dir = getattr(args, "scenarios_dir", None)
+    elements_abs = os.path.abspath(args.elements) if args.elements else None
+
+    if single:
+        scenario_paths = [os.path.abspath(single)]
+    elif scenarios_dir:
+        base = Path(scenarios_dir).resolve()
+        if base.exists() and base.is_dir():
+            import itertools
+            yaml_files = sorted(
+                {
+                    str(p.resolve())
+                    for p in itertools.chain(base.rglob("*.yaml"), base.rglob("*.yml"))
+                }
+            )
+            if elements_abs:
+                yaml_files = [p for p in yaml_files if os.path.abspath(p) != elements_abs]
+            scenario_paths = yaml_files
+        else:
+            scenario_paths = []
+    else:
+        scenario_paths = []
+
+    if not scenario_paths:
+        logger.warning(
+            "No scenario paths found in argv; falling back to SubprocessExecutor"
+        )
+        return SubprocessExecutor(argv, parent)
+
+    # --- schema path ---
+    schema_path = getattr(args, "schema", None) or os.path.join(
+        os.path.dirname(__file__), "..", "uiauto", "schemas", "scenario.schema.json"
+    )
+
+    # --- allure report directory ---
+    allure_report_dir = getattr(args, "allure_dir", None) or "allure-report"
+
+    logger.debug(f"Creating PytestExecutor for 'run'")
+    return PytestExecutor(
+        elements_path=args.elements,
+        scenario_paths=scenario_paths,
+        schema_path=schema_path,
+        timing_preset=timing_preset,
+        variables=variables,
+        allure_report_dir=allure_report_dir,
+        argv=argv,
+        parent=parent,
+    )
+
+
 def create_executor(
     command: str,
     argv: List[str],
@@ -331,8 +460,12 @@ def create_executor(
         logger.debug(f"Creating SubprocessExecutor for '{command}'")
         return SubprocessExecutor(argv, parent)
 
-    # Run/validate should match CLI subprocess behavior for isolation.
-    if command in {"run", "validate"}:
+    # Run uses the pytest+allure executor for rich reporting.
+    if command == "run":
+        return _create_pytest_executor(argv, parent)
+
+    # Validate uses subprocess for isolation.
+    if command == "validate":
         logger.debug(f"Creating SubprocessExecutor for '{command}'")
         return SubprocessExecutor(argv, parent)
 
